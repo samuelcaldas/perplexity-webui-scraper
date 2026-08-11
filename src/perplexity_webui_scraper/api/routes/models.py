@@ -10,7 +10,12 @@ from fastapi import APIRouter, Header
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
-from perplexity_webui_scraper._internal.exceptions import AuthenticationError, ModelAccessError, PerplexityError
+from perplexity_webui_scraper._internal.exceptions import (
+    AuthenticationError,
+    ModelAccessError,
+    PerplexityError,
+    RateLimitError,
+)
 from perplexity_webui_scraper.api.auth import client_pool, extract_token
 from perplexity_webui_scraper.api.schemas.response import ModelCatalogMetadata, ModelList, ModelObject
 from perplexity_webui_scraper.core.account import AccountSession, ensure_model_access
@@ -57,6 +62,8 @@ def _authenticated_models(models: list[Model], token: str) -> list[Model]:
         session = AccountSession.model_validate({"user": {"subscription_tier": profile.account_tier}})
     except AuthenticationError:
         client_pool.discard(token, client)
+        raise
+    except RateLimitError:
         raise
     except (PerplexityError, ValidationError, JSONDecodeError):
         client_pool.discard(token, client)

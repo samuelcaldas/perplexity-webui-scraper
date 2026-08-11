@@ -17,6 +17,7 @@ class ErrorDetail(BaseModel):
     message: str
     type: str
     code: str | None = None
+    retry_after: float | None = None
 
 
 class ErrorResponse(BaseModel):

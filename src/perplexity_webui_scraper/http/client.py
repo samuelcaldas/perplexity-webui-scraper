@@ -9,11 +9,15 @@ error codes into typed exceptions.
 from __future__ import annotations
 
 from contextlib import suppress
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
+from math import isfinite
 from time import monotonic
 from typing import TYPE_CHECKING, Any
 
 from curl_cffi.requests import Response as CurlResponse
 from curl_cffi.requests import Session
+from curl_cffi.requests import exceptions as curl_exceptions
 
 from perplexity_webui_scraper._internal.constants import (
     API_BASE_URL,
@@ -28,6 +32,7 @@ from perplexity_webui_scraper._internal.exceptions import (
     HTTPError,
     PerplexityError,
     RateLimitError,
+    TransientHTTPError,
 )
 from perplexity_webui_scraper._internal.logging import (
     get_logger,
@@ -46,6 +51,23 @@ if TYPE_CHECKING:
 
 
 logger = get_logger(__name__)
+
+
+def _parse_retry_after(value: object) -> float | None:
+    """Parse delta-seconds or HTTP-date Retry-After header safely."""
+    if not isinstance(value, str):
+        return None
+    try:
+        seconds = float(value)
+    except ValueError:
+        try:
+            retry_at = parsedate_to_datetime(value)
+        except (TypeError, ValueError):
+            return None
+        if retry_at.tzinfo is None:
+            retry_at = retry_at.replace(tzinfo=UTC)
+        seconds = (retry_at - datetime.now(UTC)).total_seconds()
+    return seconds if isfinite(seconds) and seconds >= 0 else None
 
 
 class HTTPClient:
@@ -82,7 +104,11 @@ class HTTPClient:
         retry_base_delay: float = 1.0,
         retry_max_delay: float = 60.0,
         retry_jitter: float = 0.5,
+        max_rate_limit_delay: float = 300.0,
+        circuit_failure_threshold: int = 3,
+        circuit_cooldown: float = 30.0,
         requests_per_second: float = 0.5,
+        rate_limiter: RateLimiter | None = None,
         rotate_fingerprint: bool = True,
         max_init_query_length: int = 2000,
     ) -> None:
@@ -96,7 +122,11 @@ class HTTPClient:
             retry_base_delay: Initial backoff delay in seconds.
             retry_max_delay: Maximum backoff delay cap in seconds.
             retry_jitter: Jitter factor (0-1).
+            max_rate_limit_delay: Maximum Retry-After delay accepted in seconds.
+            circuit_failure_threshold: Consecutive transient failures before opening circuit.
+            circuit_cooldown: Minimum circuit-open cooldown in seconds.
             requests_per_second: Rate limit; ``0`` disables it.
+            rate_limiter: Optional shared pacing and cooldown state.
             rotate_fingerprint: Rotate fingerprint on each retry.
             max_init_query_length: Truncate init query to this length;
                 ``0`` disables truncation.
@@ -112,10 +142,17 @@ class HTTPClient:
             base_delay=retry_base_delay,
             max_delay=retry_max_delay,
             jitter=retry_jitter,
+            max_rate_limit_delay=max_rate_limit_delay,
         )
 
-        self._rate_limiter: RateLimiter | None = (
-            RateLimiter(requests_per_second=requests_per_second) if requests_per_second > 0 else None
+        self._rate_limiter = rate_limiter or (
+            RateLimiter(
+                requests_per_second=requests_per_second,
+                circuit_failure_threshold=circuit_failure_threshold,
+                circuit_cooldown=circuit_cooldown,
+            )
+            if requests_per_second > 0
+            else None
         )
 
         self._session = self._create_session(impersonate)
@@ -159,12 +196,30 @@ class HTTPClient:
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _throttle(self) -> None:
-        """Apply rate limiting if configured."""
+    def _throttle(self, *, pace: bool = True) -> None:
+        """Apply shared provider cooldown and optional normal request pacing."""
         if self._rate_limiter:
-            self._rate_limiter.acquire()
+            self._rate_limiter.acquire(pace=pace)
 
-    def _on_retry(self, attempt: int, exception: BaseException, wait: float) -> None:
+    def record_rate_limit(self, error: RateLimitError) -> None:
+        """Record bounded provider throttling discovered outside status handling."""
+        if self._rate_limiter:
+            retry_after = error.retry_after
+            if retry_after is not None:
+                retry_after = min(retry_after, self._retry_config.max_rate_limit_delay)
+            self._rate_limiter.record_rate_limit(retry_after)
+
+    def _record_transient_failure(self, error: Exception) -> None:
+        """Record one retryable upstream failure in shared circuit state."""
+        if self._rate_limiter is None:
+            return
+
+        retry_after = error.retry_after if isinstance(error, RateLimitError) else None
+        if retry_after is not None:
+            retry_after = min(retry_after, self._retry_config.max_rate_limit_delay)
+        self._rate_limiter.record_transient_failure(retry_after)
+
+    def _on_retry(self, attempt: int, exception: Exception, wait: float) -> None:
         """Callback invoked before each retry attempt.
 
         Args:
@@ -174,7 +229,7 @@ class HTTPClient:
         """
         log_retry(attempt, self._retry_config.max_retries, exception, wait)
 
-        if self._rotate_fingerprint:
+        if self._rotate_fingerprint and not isinstance(exception, RateLimitError):
             self._rotate_session()
 
     def _handle_error(self, error: Exception, context: str = "") -> None:
@@ -195,18 +250,33 @@ class HTTPClient:
         url: str | None = None
         response_body: str | None = None
 
+        retry_after: float | None = None
         if response is not None:
             status_code = getattr(response, "status_code", None)
             url = getattr(response, "url", None)
+            headers = getattr(response, "headers", {})
+            retry_after = _parse_retry_after(getattr(headers, "get", lambda _key: None)("Retry-After"))
 
             with suppress(Exception):
                 response_body = response.text if hasattr(response, "text") else None
 
         match status_code:
-            case 403:
+            case 401 | 403:
                 raise AuthenticationError from error
             case 429:
-                raise RateLimitError from error
+                rate_error = RateLimitError(
+                    url=str(url) if url else None,
+                    response_body=response_body,
+                    retry_after=retry_after,
+                )
+                raise rate_error from error
+            case _ if status_code is not None and status_code >= 500:
+                raise TransientHTTPError(
+                    f"{context}HTTP {status_code}: {error!s}",
+                    status_code=status_code,
+                    url=str(url) if url else None,
+                    response_body=response_body,
+                ) from error
             case _ if status_code is not None:
                 raise HTTPError(
                     f"{context}HTTP {status_code}: {error!s}",
@@ -254,12 +324,13 @@ class HTTPClient:
         log_request("GET", url, params=params)
 
         def _do_get() -> CurlResponse:
-            if rate_limited:
-                self._throttle()
+            self._throttle(pace=rate_limited)
             t0 = monotonic()
             response = self._session.get(url, params=params)
             log_response("GET", url, response.status_code, elapsed_ms=(monotonic() - t0) * 1000)
             self._raise_for_status(response, f"GET {endpoint}: ")
+            if self._rate_limiter:
+                self._rate_limiter.record_success()
 
             return response
 
@@ -268,7 +339,13 @@ class HTTPClient:
                 _do_get,
                 self._retry_config,
                 on_retry=self._on_retry,
-                retryable=(RateLimitError, ConnectionError, TimeoutError),
+                on_failure=self._record_transient_failure,
+                retryable=(
+                    RateLimitError,
+                    TransientHTTPError,
+                    curl_exceptions.ConnectionError,
+                    curl_exceptions.Timeout,
+                ),
             )
         except (RateLimitError, AuthenticationError, HTTPError, PerplexityError):
             raise
@@ -307,6 +384,8 @@ class HTTPClient:
             response = self._session.post(url, json=json, stream=stream)
             log_response("POST", url, response.status_code, elapsed_ms=(monotonic() - t0) * 1000)
             self._raise_for_status(response, f"POST {endpoint}: ")
+            if self._rate_limiter:
+                self._rate_limiter.record_success()
 
             return response
 
@@ -315,7 +394,13 @@ class HTTPClient:
                 _do_post,
                 self._retry_config,
                 on_retry=self._on_retry,
-                retryable=(RateLimitError, ConnectionError, TimeoutError),
+                on_failure=self._record_transient_failure,
+                retryable=(
+                    RateLimitError,
+                    TransientHTTPError,
+                    curl_exceptions.ConnectionError,
+                    curl_exceptions.Timeout,
+                ),
             )
         except (RateLimitError, AuthenticationError, HTTPError, PerplexityError):
             raise
@@ -337,6 +422,9 @@ class HTTPClient:
 
         try:
             yield from response.iter_lines()
+        except (curl_exceptions.ConnectionError, curl_exceptions.Timeout) as error:
+            self._record_transient_failure(error)
+            raise TransientHTTPError(f"Stream {endpoint}: {error!s}") from error
         finally:
             response.close()
 

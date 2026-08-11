@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from math import ceil
+
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -11,6 +13,7 @@ from perplexity_webui_scraper._internal.exceptions import (
     ModelAccessError,
     ModelStatusError,
     PerplexityError,
+    RateLimitError,
 )
 from perplexity_webui_scraper.api.error_handling import error_response_for
 from perplexity_webui_scraper.api.routes.completions import router as completions_router
@@ -110,7 +113,12 @@ def create_app() -> FastAPI:
     ) -> JSONResponse:
         """Return library failures in a safe OpenAI-compatible envelope."""
         response_status, response = error_response_for(exc)
-        return JSONResponse(status_code=response_status, content=response.model_dump())
+        headers = _retry_after_header(exc)
+        return JSONResponse(
+            status_code=response_status,
+            content=response.model_dump(exclude_none=True),
+            headers=headers,
+        )
 
     @application.exception_handler(ModelStatusError)
     async def _model_status_exception_handler(
@@ -130,6 +138,13 @@ def create_app() -> FastAPI:
         )
 
     return application
+
+
+def _retry_after_header(exc: PerplexityError) -> dict[str, str] | None:
+    """Return standard retry metadata for non-streaming rate-limit responses."""
+    if not isinstance(exc, RateLimitError) or exc.retry_after is None:
+        return None
+    return {"Retry-After": str(max(0, ceil(exc.retry_after)))}
 
 
 #: Module-level ``app`` instance for uvicorn compatibility:

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from threading import Condition
+from time import monotonic
 from typing import TYPE_CHECKING, Literal, TypeAlias, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field
@@ -10,6 +12,8 @@ from perplexity_webui_scraper._internal.exceptions import FileAccessError, Model
 
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from perplexity_webui_scraper.models.types import Model, ModelTier
 
 
@@ -128,6 +132,90 @@ class AccountProfile(BaseModel):
             return self.settings.account_tier
 
         return "unknown"
+
+
+class AccountProfileProvider:
+    """Synchronously provide cached account profiles with single-flight refreshes."""
+
+    __slots__ = (
+        "_cached_at",
+        "_cached_profile",
+        "_clock",
+        "_condition",
+        "_get_session",
+        "_get_settings",
+        "_refresh_error",
+        "_refreshing",
+        "_ttl",
+    )
+
+    def __init__(
+        self,
+        get_session: Callable[[], AccountSession],
+        get_settings: Callable[[], AccountSettings],
+        ttl: float = 60.0,
+        clock: Callable[[], float] = monotonic,
+    ) -> None:
+        if ttl < 0:
+            raise ValueError("account profile TTL cannot be negative")
+
+        self._condition = Condition()
+        self._get_session = get_session
+        self._get_settings = get_settings
+        self._cached_at: float | None = None
+        self._cached_profile: AccountProfile | None = None
+        self._clock = clock
+        self._refresh_error: Exception | None = None
+        self._refreshing = False
+        self._ttl = ttl
+
+    def __call__(self) -> AccountProfile:
+        """Return cached profile or perform one synchronous refresh."""
+        with self._condition:
+            cached_profile = self._cached_profile
+            if cached_profile is not None and self._cache_is_valid():
+                return cached_profile
+
+            if self._refreshing:
+                self._condition.wait_for(lambda: not self._refreshing)
+                cached_profile = self._cached_profile
+                if cached_profile is not None and self._cache_is_valid():
+                    return cached_profile
+                if self._refresh_error is not None:
+                    raise self._refresh_error
+
+            self._refreshing = True
+            self._refresh_error = None
+
+        try:
+            profile = self._refresh()
+        except Exception as error:
+            with self._condition:
+                self._refresh_error = error
+                self._refreshing = False
+                self._condition.notify_all()
+            raise
+
+        with self._condition:
+            self._cached_profile = profile
+            self._cached_at = self._clock()
+            self._refreshing = False
+            self._refresh_error = None
+            self._condition.notify_all()
+
+        return profile
+
+    def _cache_is_valid(self) -> bool:
+        if self._cached_profile is None or self._cached_at is None:
+            return False
+
+        return self._clock() - self._cached_at < self._ttl
+
+    def _refresh(self) -> AccountProfile:
+        session = self._get_session()
+        settings = self._get_settings() if session.account_tier == "unknown" else None
+
+        return AccountProfile(session=session, settings=settings)
 
 
 def normalize_account_tier(

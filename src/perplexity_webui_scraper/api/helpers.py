@@ -63,10 +63,14 @@ def build_tool_result_follow_up(request: ChatCompletionRequest) -> str | None:
 
     assistant = messages[tool_start - 1]
 
-    if assistant.role != "assistant" or not assistant.tool_calls:
+    if assistant.role != "assistant":
         return None
 
-    expected_ids = [call.id for call in assistant.tool_calls]
+    expected_calls = assistant.effective_tool_calls()
+    if not expected_calls:
+        return None
+
+    expected_ids = [call.id for call in expected_calls]
     result_ids = [message.tool_call_id for message in messages[tool_start:]]
 
     if len(expected_ids) != len(result_ids) or set(expected_ids) != set(result_ids):
@@ -134,9 +138,10 @@ def _format_message(message: ChatMessage) -> str:
     if message.role == "tool":
         return _format_tool_result(message.tool_call_id or "", text)
 
-    if message.role == "assistant" and message.tool_calls:
+    effective_calls = message.effective_tool_calls()
+    if message.role == "assistant" and effective_calls:
         serialized_calls = json.dumps(
-            [call.model_dump(mode="json", exclude_none=True) for call in message.tool_calls],
+            [call.model_dump(mode="json", exclude_none=True) for call in effective_calls],
             ensure_ascii=False,
             separators=(",", ":"),
             sort_keys=True,

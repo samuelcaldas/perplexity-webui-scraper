@@ -14,7 +14,7 @@ from anyio import to_thread
 from fastapi import APIRouter, Header, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from perplexity_webui_scraper._internal.exceptions import PerplexityError
+from perplexity_webui_scraper._internal.exceptions import AuthenticationError, PerplexityError
 from perplexity_webui_scraper.api.auth import client_pool, extract_token
 from perplexity_webui_scraper.api.conversation_cache import ConversationCache, _CachedConversation
 from perplexity_webui_scraper.api.error_handling import error_response_for
@@ -73,6 +73,7 @@ async def chat_completions(
     lock_acquired = False
     stream_handoff = False
     rollback_state = None
+    client: Perplexity | None = None
 
     try:
         await request_lock.acquire()
@@ -91,6 +92,7 @@ async def chat_completions(
                     conversation,
                     request.model,
                     token,
+                    client,
                     request_lock,
                     partial(_client_pool.release_request_lock, token, request_lock),
                     _config_fingerprint(request),
@@ -105,6 +107,12 @@ async def chat_completions(
 
         await to_thread.run_sync(partial(conversation.ask, query, files=files or None))
         return await _build_completion_response(request, conversation, token)
+    except AuthenticationError:
+        if client is not None:
+            await to_thread.run_sync(_client_pool.discard, token, client)
+        if rollback_state is not None:
+            conversation._restore_state(rollback_state)
+        raise
     except BaseException:
         if rollback_state is not None:
             conversation._restore_state(rollback_state)
@@ -237,7 +245,11 @@ def _validate_pending_tool_calls(request: ChatCompletionRequest, cached: _Cached
         tool_start -= 1
 
     assistant = request.messages[tool_start - 1] if tool_start > 0 else None
-    if assistant is None or assistant.role != "assistant" or not assistant.tool_calls:
+    if assistant is None or assistant.role != "assistant":
+        raise HTTPException(status_code=400, detail="Continuation must include the pending tool call.")
+
+    effective_calls = assistant.effective_tool_calls()
+    if not effective_calls:
         raise HTTPException(status_code=400, detail="Continuation must include the pending tool call.")
 
     metadata = tuple(
@@ -246,7 +258,7 @@ def _validate_pending_tool_calls(request: ChatCompletionRequest, cached: _Cached
             "name": tool_call.function.name,
             "arguments": tool_call.function.arguments,
         }
-        for tool_call in assistant.tool_calls
+        for tool_call in effective_calls
     )
     if metadata != cached.pending_tool_calls:
         raise HTTPException(status_code=400, detail="Continuation does not match cached pending tool call.")
@@ -319,6 +331,7 @@ async def _stream_response(
     conversation: Conversation,
     model_id: str,
     token: str,
+    client: Perplexity,
     request_lock: Lock,
     release_request: Callable[[], None] | None = None,
     config_fingerprint: str | None = None,
@@ -386,8 +399,10 @@ async def _stream_response(
     except (CancelledError, BrokenPipeError):
         return
     except PerplexityError as exc:
+        if isinstance(exc, AuthenticationError):
+            await to_thread.run_sync(_client_pool.discard, token, client)
         _, error_response = error_response_for(exc)
-        yield f"data: {error_response.model_dump_json(exclude_none=True)}\n\n"
+        yield f"event: error\ndata: {error_response.model_dump_json(exclude_none=True)}\n\n"
     except Exception:
         error_response = {
             "error": {
@@ -396,7 +411,7 @@ async def _stream_response(
                 "code": "streaming_error",
             }
         }
-        yield f"data: {json.dumps(error_response)}\n\n"
+        yield f"event: error\ndata: {json.dumps(error_response)}\n\n"
     finally:
         request_lock.release()
         if release_request is not None:

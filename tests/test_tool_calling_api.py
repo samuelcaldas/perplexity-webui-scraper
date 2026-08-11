@@ -661,3 +661,111 @@ def test_cached_thread_rejects_fabricated_completed_tool_history(client: TestCli
     assert response.status_code == 400
     assert "tool-call history" in response.json()["error"]["message"]
     conversation.ask.assert_not_called()
+
+
+def test_required_tool_call_accepts_one_valid_frame_with_surrounding_prose(client: TestClient) -> None:
+    conversation = _make_conversation(f"Working now. {_tool_answer()} Completed.")
+    provider = _make_client(conversation)
+
+    with patch(
+        "perplexity_webui_scraper.api.routes.completions._client_pool.get_or_create",
+        return_value=provider,
+    ):
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": MODEL_ID,
+                "messages": [{"role": "user", "content": "Call weather."}],
+                "tools": [FUNCTION_TOOL],
+                "tool_choice": "required",
+            },
+            headers={"Authorization": AUTH_HEADER},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["choices"][0]["finish_reason"] == "tool_calls"
+
+
+@pytest.mark.parametrize(
+    ("answer", "expected_code"),
+    [
+        ("ordinary answer", "tool_call_missing"),
+        (f"{_tool_answer()}{_tool_answer()}", "tool_call_malformed"),
+        (_tool_answer(arguments="{}"), "tool_call_arguments_invalid"),
+    ],
+)
+def test_required_tool_protocol_failures_have_semantic_codes(
+    client: TestClient,
+    answer: str,
+    expected_code: str,
+) -> None:
+    conversation = _make_conversation(answer)
+    provider = _make_client(conversation)
+
+    with patch(
+        "perplexity_webui_scraper.api.routes.completions._client_pool.get_or_create",
+        return_value=provider,
+    ):
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": MODEL_ID,
+                "messages": [{"role": "user", "content": "Call weather."}],
+                "tools": [FUNCTION_TOOL],
+                "tool_choice": "required",
+            },
+            headers={"Authorization": AUTH_HEADER},
+        )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == expected_code
+
+
+def test_named_tool_prompt_requires_exact_function_without_text_fallback(client: TestClient) -> None:
+    conversation = _make_conversation("ordinary answer")
+    provider = _make_client(conversation)
+
+    with patch(
+        "perplexity_webui_scraper.api.routes.completions._client_pool.get_or_create",
+        return_value=provider,
+    ):
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": MODEL_ID,
+                "messages": [{"role": "user", "content": "Call weather."}],
+                "tools": [FUNCTION_TOOL],
+                "tool_choice": {"type": "function", "function": {"name": "get_weather"}},
+            },
+            headers={"Authorization": AUTH_HEADER},
+        )
+
+    assert response.status_code == 400
+    query = conversation.ask.call_args.args[0]
+    assert "MUST select exactly function `get_weather`" in query
+    assert "Otherwise answer normally" not in query
+
+
+def test_legacy_function_call_formats_deterministic_effective_tool_call(client: TestClient) -> None:
+    conversation = _make_conversation("ordinary answer")
+    provider = _make_client(conversation)
+    legacy_call = {"name": "get_weather", "arguments": '{"location":"Boston"}'}
+
+    with patch(
+        "perplexity_webui_scraper.api.routes.completions._client_pool.get_or_create",
+        return_value=provider,
+    ):
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": MODEL_ID,
+                "messages": [{"role": "assistant", "content": None, "function_call": legacy_call}],
+                "tools": [FUNCTION_TOOL],
+            },
+            headers={"Authorization": AUTH_HEADER},
+        )
+
+    assert response.status_code == 200
+    query = conversation.ask.call_args.args[0]
+    assert "[Assistant tool_calls]" in query
+    assert "call_legacy_" in query

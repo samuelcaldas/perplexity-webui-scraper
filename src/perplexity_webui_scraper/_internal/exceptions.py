@@ -10,6 +10,7 @@ from __future__ import annotations
 
 __all__: list[str] = [
     "AuthenticationError",
+    "CircuitOpenError",
     "FileAccessError",
     "FileUploadError",
     "FileValidationError",
@@ -22,6 +23,8 @@ __all__: list[str] = [
     "ResearchClarifyingQuestionsError",
     "ResponseParsingError",
     "StreamingError",
+    "ToolProtocolError",
+    "TransientHTTPError",
 ]
 
 
@@ -52,10 +55,12 @@ class HTTPError(PerplexityError):
         status_code: int | None = None,
         url: str | None = None,
         response_body: str | None = None,
+        retry_after: float | None = None,
     ) -> None:
         self.status_code = status_code
         self.url = url
         self.response_body = response_body[:500] if response_body and len(response_body) > 500 else response_body
+        self.retry_after = retry_after
         super().__init__(message)
 
     def __repr__(self) -> str:
@@ -73,13 +78,46 @@ class AuthenticationError(HTTPError):
 
 
 class RateLimitError(HTTPError):
-    """Raised when the Perplexity rate limit is exceeded (HTTP 429)."""
+    """Raised when Perplexity rate limit is exceeded (HTTP 429)."""
 
-    def __init__(self, message: str | None = None) -> None:
+    def __init__(
+        self,
+        message: str | None = None,
+        *,
+        url: str | None = None,
+        response_body: str | None = None,
+        retry_after: float | None = None,
+    ) -> None:
         super().__init__(
             message or "Rate limit exceeded (429). Please wait before retrying.",
             status_code=429,
+            url=url,
+            response_body=response_body,
+            retry_after=retry_after,
         )
+
+
+class CircuitOpenError(RateLimitError):
+    """Raised while shared transient-failure circuit rejects new provider work."""
+
+    def __init__(self, retry_after: float) -> None:
+        super().__init__("Provider is temporarily unavailable. Retry after cooldown.", retry_after=retry_after)
+
+
+class TransientHTTPError(HTTPError):
+    """Raised for retryable upstream HTTP 5xx responses."""
+
+
+class ToolProtocolError(PerplexityError):
+    """Raised when a required emulated provider tool signal is invalid.
+
+    Attributes:
+        code: Stable OpenAI-compatible protocol error code.
+    """
+
+    def __init__(self, code: str, message: str) -> None:
+        self.code = code
+        super().__init__(message)
 
 
 class ModelAccessError(PerplexityError):

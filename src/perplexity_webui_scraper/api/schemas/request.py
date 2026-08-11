@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from base64 import b64decode
 import binascii
+import hashlib
 import json
 from typing import Any, Literal, Self
 from uuid import UUID
@@ -223,6 +224,27 @@ class ChatMessage(BaseModel):
             return ""
 
         return "\n".join(p.text for p in self.content if isinstance(p, ContentPartText))
+
+    def effective_tool_calls(self) -> tuple[AssistantToolCall, ...]:
+        """Return modern calls or a deterministic legacy function-call equivalent."""
+        if self.tool_calls:
+            return tuple(self.tool_calls)
+        if self.function_call is None:
+            return ()
+
+        canonical = json.dumps(
+            {"arguments": self.function_call.arguments, "name": self.function_call.name},
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+        call_id = f"call_legacy_{hashlib.sha256(canonical.encode('utf-8')).hexdigest()[:24]}"
+        return (
+            AssistantToolCall(
+                id=call_id,
+                type="function",
+                function=self.function_call,
+            ),
+        )
 
     def image_bytes(self) -> list[tuple[bytes, str, str]]:
         """Return decoded base64 image parts as ``(data, filename, mimetype)`` tuples.
@@ -448,15 +470,22 @@ class ChatCompletionRequest(BaseModel):
                 continue
 
             self._validate_legacy_function_call(message)
-            if not message.tool_calls:
+            effective_calls = message.effective_tool_calls()
+            has_legacy_result = bool(
+                message.function_call is not None
+                and not message.tool_calls
+                and message_index + 1 < len(self.messages)
+                and self.messages[message_index + 1].role == "tool"
+            )
+            if not message.tool_calls and not has_legacy_result:
                 message_index += 1
                 continue
 
-            expected_ids = [tool_call.id for tool_call in message.tool_calls]
+            expected_ids = [tool_call.id for tool_call in effective_calls]
             if len(expected_ids) != len(set(expected_ids)) or seen_tool_call_ids.intersection(expected_ids):
                 raise ValueError("duplicate tool call id")
             seen_tool_call_ids.update(expected_ids)
-            self._validate_assistant_tool_calls(message)
+            self._validate_assistant_tool_calls(effective_calls)
 
             for offset, expected_id in enumerate(expected_ids, start=1):
                 result_index = message_index + offset
@@ -479,9 +508,9 @@ class ChatCompletionRequest(BaseModel):
             "assistant function call",
         )
 
-    def _validate_assistant_tool_calls(self, message: ChatMessage) -> None:
-        """Validate every assistant tool call against current declarations."""
-        for tool_call in message.tool_calls or []:
+    def _validate_assistant_tool_calls(self, tool_calls: tuple[AssistantToolCall, ...]) -> None:
+        """Validate effective assistant tool calls against current declarations."""
+        for tool_call in tool_calls:
             validate_function_call(
                 tool_call.function.name,
                 tool_call.function.arguments,

@@ -10,7 +10,7 @@ import asyncio
 from asyncio import Lock
 from time import time
 from types import SimpleNamespace
-from typing import cast
+from typing import TYPE_CHECKING, cast
 from unittest.mock import MagicMock, patch
 
 from fastapi.testclient import TestClient
@@ -22,6 +22,10 @@ from perplexity_webui_scraper.api.app import app
 from perplexity_webui_scraper.api.conversation_cache import _CachedConversation
 from perplexity_webui_scraper.api.routes.completions import _client_pool, _conversation_cache, _stream_response
 from perplexity_webui_scraper.core import Conversation
+
+
+if TYPE_CHECKING:
+    from perplexity_webui_scraper.core.client import Perplexity
 
 
 # Constants
@@ -352,12 +356,14 @@ def test_stream_failure_emits_error_and_releases_token_lock() -> None:
     async def collect() -> list[str]:
         lock = Lock()
         await lock.acquire()
+        client = cast("Perplexity", _make_mock_client())
         lines = [
             line
             async for line in _stream_response(
                 cast("Conversation", _FailingStreamConversation()),
                 MODEL_ID,
                 TOKEN,
+                client,
                 lock,
             )
         ]

@@ -463,7 +463,7 @@ Returns `HTTP 401` if the header is missing or malformed.
 }
 ```
 
-**Streaming** (`stream: true`) uses Server-Sent Events, one `data: {...}` JSON chunk per event. Successful streams emit an assistant role chunk, zero or more content deltas, one `finish_reason: "stop"` chunk, and `data: [DONE]`. If Perplexity fails after headers are sent, the stream emits one `data: {"error": ...}` event and does not emit a success finish chunk or `[DONE]`.
+**Streaming** (`stream: true`) uses Server-Sent Events, one `data: {...}` JSON chunk per event. Successful streams emit an assistant role chunk, zero or more content deltas, one `finish_reason: "stop"` chunk, and `data: [DONE]`. If Perplexity fails after headers are sent, HTTP status remains `200` because headers are already committed; stream emits one `event: error` with `data: {"error": ...}` and does not emit a success finish chunk or `[DONE]`. A rate-limit error includes `error.retry_after` when Perplexity supplied a valid retry hint.
 
 Streams and non-streaming requests are serialized per Bearer token because each cached Perplexity session owns mutable conversation and HTTP state. A slow stream therefore holds that token's session until completion or disconnect; other tokens remain independent.
 

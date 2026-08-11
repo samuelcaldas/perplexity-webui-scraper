@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from perplexity_webui_scraper._internal.constants import ENDPOINT_AUTH_SESSION, ENDPOINT_USER_SETTINGS
-from perplexity_webui_scraper._internal.exceptions import StreamingError
+from perplexity_webui_scraper._internal.exceptions import RateLimitError, StreamingError
 from perplexity_webui_scraper.core.account import (
     AccountProfile,
     AccountSession,
@@ -32,7 +32,7 @@ from perplexity_webui_scraper.models.types import Model  # noqa: TC001
 
 
 if TYPE_CHECKING:
-    from collections.abc import Generator
+    from collections.abc import Callable, Generator
 
     from perplexity_webui_scraper._internal.types import CitationMode, FileInput
     from perplexity_webui_scraper.config.conversation import ConversationConfig
@@ -79,6 +79,7 @@ class Conversation:
         "_chunks",
         "_citation_mode",
         "_config",
+        "_get_account_profile",
         "_http",
         "_raw_data",
         "_read_write_token",
@@ -88,8 +89,14 @@ class Conversation:
         "_stream_snapshot",
     )
 
-    def __init__(self, http: HTTPClient, config: ConversationConfig) -> None:
+    def __init__(
+        self,
+        http: HTTPClient,
+        config: ConversationConfig,
+        get_account_profile: Callable[[], AccountProfile] | None = None,
+    ) -> None:
         self._http = http
+        self._get_account_profile = get_account_profile or self._fetch_account_profile
         self._config = config
         self._citation_mode: CitationMode = config.citation_mode
         self._backend_uuid: str | None = None
@@ -233,22 +240,24 @@ class Conversation:
 
     def _validate_request_access(self, model: Model, has_files: bool) -> Model:
         """Ensure the account can use the selected model and attachments."""
-        response = self._http.get(ENDPOINT_AUTH_SESSION, rate_limited=False)
-        session = AccountSession.model_validate(response.json())
-        settings: AccountSettings | None = None
-
-        if session.account_tier == "unknown":
-            settings_response = self._http.get(ENDPOINT_USER_SETTINGS, rate_limited=False)
-            settings = AccountSettings.model_validate(settings_response.json())
-
-        profile = AccountProfile(session=session, settings=settings)
-        account_tier = profile.account_tier
+        account_tier = self._get_account_profile().account_tier
         effective_session = AccountSession.model_validate({"user": {"subscription_tier": account_tier}})
         if model.status == "available":
             ensure_model_access(effective_session, model)
         ensure_file_access(account_tier, has_files)
 
         return model_for_account(model, account_tier)
+
+    def _fetch_account_profile(self) -> AccountProfile:
+        """Fetch account profile when Conversation was not created by Perplexity."""
+        response = self._http.get(ENDPOINT_AUTH_SESSION, rate_limited=False)
+        session = AccountSession.model_validate(response.json())
+        if session.account_tier != "unknown":
+            return AccountProfile(session=session)
+
+        settings_response = self._http.get(ENDPOINT_USER_SETTINGS, rate_limited=False)
+        settings = AccountSettings.model_validate(settings_response.json())
+        return AccountProfile(session=session, settings=settings)
 
     def _reset_state(self) -> None:
         """Reset all mutable response state before a new query."""
@@ -301,12 +310,16 @@ class Conversation:
         if "read_write_token" in data:
             self._read_write_token = data["read_write_token"]
 
-        answer, chunks, updated_results, raw_data = process_sse_data(
-            data,
-            self._search_results,
-            self._citation_mode,
-            self._schematized_state,
-        )
+        try:
+            answer, chunks, updated_results, raw_data = process_sse_data(
+                data,
+                self._search_results,
+                self._citation_mode,
+                self._schematized_state,
+            )
+        except RateLimitError as error:
+            self._http.record_rate_limit(error)
+            raise
 
         if updated_results is not self._search_results:
             self._search_results = updated_results

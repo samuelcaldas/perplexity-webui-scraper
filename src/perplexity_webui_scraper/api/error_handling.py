@@ -16,6 +16,7 @@ from perplexity_webui_scraper._internal.exceptions import (
     RateLimitError,
     ResearchClarifyingQuestionsError,
     ResponseParsingError,
+    ToolProtocolError,
 )
 from perplexity_webui_scraper.api.schemas.errors import ErrorDetail, ErrorResponse
 
@@ -36,8 +37,14 @@ _ERROR_CODES: tuple[tuple[type[PerplexityError], str], ...] = (
 
 def error_response_for(exc: PerplexityError) -> tuple[int, ErrorResponse]:
     """Map library exception to safe OpenAI-compatible status and envelope."""
+    retry_after = exc.retry_after if isinstance(exc, RateLimitError) else None
     return _status_for(exc), ErrorResponse(
-        error=ErrorDetail(message=str(exc), type=_type_for(exc), code=_code_for(exc))
+        error=ErrorDetail(
+            message=str(exc),
+            type=_type_for(exc),
+            code=_code_for(exc),
+            retry_after=retry_after,
+        )
     )
 
 
@@ -48,6 +55,7 @@ def _status_for(exc: PerplexityError) -> int:
         (ModelAccessError, status.HTTP_403_FORBIDDEN),
         (FileAccessError, status.HTTP_403_FORBIDDEN),
         (ModelStatusError, status.HTTP_400_BAD_REQUEST),
+        (ToolProtocolError, status.HTTP_400_BAD_REQUEST),
         (ResearchClarifyingQuestionsError, status.HTTP_422_UNPROCESSABLE_CONTENT),
         (FileValidationError, status.HTTP_400_BAD_REQUEST),
     )
@@ -60,12 +68,14 @@ def _status_for(exc: PerplexityError) -> int:
 
 
 def _type_for(exc: PerplexityError) -> str:
-    if isinstance(exc, (ModelAccessError, FileAccessError, ModelStatusError, FileValidationError)):
+    if isinstance(exc, (ModelAccessError, FileAccessError, ModelStatusError, FileValidationError, ToolProtocolError)):
         return "invalid_request_error"
     return "server_error"
 
 
 def _code_for(exc: PerplexityError) -> str:
+    if isinstance(exc, ToolProtocolError):
+        return exc.code
     for exception_type, code in _ERROR_CODES:
         if isinstance(exc, exception_type):
             return code

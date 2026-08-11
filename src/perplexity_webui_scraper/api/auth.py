@@ -16,6 +16,7 @@ from fastapi import HTTPException
 from perplexity_webui_scraper import Perplexity
 from perplexity_webui_scraper._internal.constants import AUTH_BEARER_PREFIX
 from perplexity_webui_scraper.config.client import ClientConfig
+from perplexity_webui_scraper.http.resilience import RateLimiter
 
 
 def extract_token(authorization: str | None) -> str:
@@ -45,7 +46,7 @@ def extract_token(authorization: str | None) -> str:
     if not token.strip():
         raise HTTPException(status_code=401, detail="Bearer token is empty.")
 
-    return token
+    return token.strip()
 
 
 class ClientPool:
@@ -61,6 +62,7 @@ class ClientPool:
         self._transient_clients: dict[str, Perplexity] = {}
         self._client_cached_refs: dict[str, int] = {}
         self._pending_discards: set[str] = set()
+        self._rate_limiters: dict[str, RateLimiter] = {}
         self._request_locks: OrderedDict[str, Lock] = OrderedDict()
         self._request_users: dict[str, int] = {}
         self._state_lock = RLock()
@@ -118,13 +120,20 @@ class ClientPool:
             if client is not None:
                 return client
 
-            client = Perplexity(token, config=ClientConfig())
+            config = ClientConfig()
+            rate_limiter = self._rate_limiters.setdefault(
+                token,
+                RateLimiter(
+                    requests_per_second=config.requests_per_second,
+                    circuit_failure_threshold=config.circuit_failure_threshold,
+                    circuit_cooldown=config.circuit_cooldown,
+                ),
+            )
+            client = Perplexity(token, config=config, rate_limiter=rate_limiter)
             if self._can_cache_client(token):
                 self._clients[token] = client
-            elif self._is_protected(token):
-                self._transient_clients[token] = client
             else:
-                client.close()
+                self._transient_clients[token] = client
             return client
 
     def _can_cache_client(self, token: str) -> bool:
@@ -200,6 +209,7 @@ class ClientPool:
         with self._state_lock:
             client = self._clients.pop(token, None)
             self._pending_discards.discard(token)
+            self._rate_limiters.pop(token, None)
             if client is not None:
                 client.close()
 
@@ -208,6 +218,7 @@ class ClientPool:
         with self._state_lock:
             client = self._transient_clients.pop(token, None)
             self._pending_discards.discard(token)
+            self._rate_limiters.pop(token, None)
             if client is not None:
                 client.close()
 

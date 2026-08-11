@@ -8,6 +8,7 @@ from perplexity_webui_scraper._internal.constants import ENDPOINT_AUTH_SESSION, 
 from perplexity_webui_scraper._internal.exceptions import FileAccessError, ModelAccessError, ModelRiskWarning
 from perplexity_webui_scraper.config.conversation import ConversationConfig
 from perplexity_webui_scraper.core.account import (
+    AccountProfileProvider,
     AccountSession,
     AccountSettings,
     ensure_model_access,
@@ -72,6 +73,25 @@ def _session_payload(subscription_tier: str, payment_tier: str = "free_with_pm")
             "username": "user",
         },
     }
+
+
+def test_account_profile_provider_caches_successful_refresh() -> None:
+    calls = {"session": 0, "settings": 0}
+    session = AccountSession.model_validate(_session_payload("pro"))
+
+    def get_session() -> AccountSession:
+        calls["session"] += 1
+        return session
+
+    def get_settings() -> AccountSettings:
+        calls["settings"] += 1
+        return AccountSettings()
+
+    provider = AccountProfileProvider(get_session, get_settings, ttl=60)
+
+    assert provider().account_tier == "pro"
+    assert provider().account_tier == "pro"
+    assert calls == {"session": 1, "settings": 0}
 
 
 def _free_session_payload() -> dict[str, Any]:
