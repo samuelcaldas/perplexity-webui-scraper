@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 from unittest.mock import MagicMock, patch
 
 from openai import BadRequestError, OpenAI
@@ -13,6 +13,9 @@ from perplexity_webui_scraper.core import Conversation
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+    from typing import Literal
+
+    from openai.types.chat import ChatCompletionFunctionToolParam, ChatCompletionNamedToolChoiceParam
 
 
 MODEL_ID = "perplexity/best"
@@ -20,7 +23,7 @@ TOKEN = "sentinel"
 THREAD_UUID = "12345678-1234-5678-1234-567812345678"
 TOOL_START = "<|OPENAI_TOOL_CALL|>"
 TOOL_END = "<|END_OPENAI_TOOL_CALL|>"
-FUNCTION_TOOL = {
+FUNCTION_TOOL: ChatCompletionFunctionToolParam = {
     "type": "function",
     "function": {
         "name": "get_weather",
@@ -31,6 +34,10 @@ FUNCTION_TOOL = {
             "required": ["location"],
         },
     },
+}
+NAMED_TOOL_CHOICE: ChatCompletionNamedToolChoiceParam = {
+    "type": "function",
+    "function": {"name": "get_weather"},
 }
 
 
@@ -123,6 +130,7 @@ def test_sdk_parses_emulated_function_tool_call(openai_client: OpenAI) -> None:
         )
 
     choice = completion.choices[0]
+    assert choice.message.tool_calls is not None
     tool_call = choice.message.tool_calls[0]
     assert choice.finish_reason == "tool_calls"
     assert choice.message.content is None
@@ -137,12 +145,12 @@ def test_sdk_parses_emulated_function_tool_call(openai_client: OpenAI) -> None:
     "tool_choice",
     [
         "required",
-        {"type": "function", "function": {"name": "get_weather"}},
+        NAMED_TOOL_CHOICE,
     ],
 )
 def test_sdk_raises_typed_bad_request_for_failed_required_tool_choice(
     openai_client: OpenAI,
-    tool_choice: str | dict[str, object],
+    tool_choice: Literal["required"] | ChatCompletionNamedToolChoiceParam,
 ) -> None:
     conversation = _make_conversation("ordinary provider answer")
     provider = _make_provider(conversation)
@@ -165,7 +173,8 @@ def test_sdk_raises_typed_bad_request_for_failed_required_tool_choice(
     assert isinstance(error, BadRequestError)
     assert error.status_code == 400
     assert error.body is not None
-    assert error.body["message"] == "Provider response did not contain a valid required tool call."
+    error_body = cast("dict[str, object]", error.body)
+    assert error_body["message"] == "Provider response did not contain a valid required tool call."
     assert error.response.status_code == 400
     provider.create_conversation.assert_called_once()
     conversation.ask.assert_called_once()
