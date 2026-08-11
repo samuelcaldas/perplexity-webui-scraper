@@ -138,7 +138,7 @@ def _process_schematized_blocks(
         if extracted is not None:
             state.answer, state.chunks, search_results = extracted
 
-    is_final = bool(data.get("text_completed") or data.get("final_sse_message") or data.get("final"))
+    is_final = is_terminal_sse_data(data)
     if is_final and state.answer is None and state.markdown_chunks:
         state.answer = format_citations("".join(state.markdown_chunks), citation_mode, search_results)
     answer = state.answer if is_final else None
@@ -228,32 +228,45 @@ def _extract_workflow_text(
     return None
 
 
-def parse_sse_line(line: str | bytes) -> dict[str, Any] | None:
-    """Parse a single SSE data line into a dict.
-
-    SSE lines follow the format ``data: <json-payload>``.  Any line that does
-    not start with this prefix is silently ignored.  The optional space after
-    the colon is accepted because both variants occur in browser streams.
-
-    Args:
-        line: A raw SSE line as bytes or a string.
-
-    Returns:
-        Deserialized JSON dict, or ``None`` if the line is not a data line.
-    """
+def is_done_sse_line(line: str | bytes) -> bool:
+    """Return whether raw SSE line is explicit provider stream termination."""
     if isinstance(line, bytes):
-        if line.startswith(b"data:"):
-            payload = line[5:].lstrip()
-            if payload == b"[DONE]":
-                return None
-            return loads(payload)
-    elif line.startswith("data:"):
-        payload = line[5:].lstrip()
-        if payload == "[DONE]":
-            return None
-        return loads(payload)
+        return line.startswith(b"data:") and line[5:].lstrip() == b"[DONE]"
+    return line.startswith("data:") and line[5:].lstrip() == "[DONE]"
 
-    return None
+
+def is_terminal_sse_data(data: dict[str, Any]) -> bool:
+    """Return whether provider payload has a literal true terminal flag."""
+    return any(data.get(key) is True for key in ("text_completed", "final_sse_message", "final"))
+
+
+def parse_sse_line(line: str | bytes) -> dict[str, Any] | None:
+    """Parse one SSE data line and require an object JSON payload."""
+    if isinstance(line, bytes):
+        if not line.startswith(b"data:"):
+            return None
+        payload = line[5:].lstrip()
+        done_marker = b"[DONE]"
+    elif isinstance(line, str):
+        if not line.startswith("data:"):
+            return None
+        payload = line[5:].lstrip()
+        done_marker = "[DONE]"
+    else:
+        raise ResponseParsingError("SSE line must be text or bytes", raw_data=repr(line))
+
+    if payload == done_marker:
+        return None
+
+    try:
+        parsed = loads(payload)
+    except (JSONDecodeError, TypeError, ValueError) as error:
+        raise ResponseParsingError("SSE data is not valid JSON", raw_data=str(payload)) from error
+
+    if not isinstance(parsed, dict):
+        raise ResponseParsingError("SSE data must be a JSON object", raw_data=str(parsed))
+
+    return parsed
 
 
 def process_sse_data(
@@ -286,6 +299,9 @@ def process_sse_data(
         ResponseParsingError: If the response has an unexpected structure or
             signals a failure status.
     """
+    if not isinstance(data, dict):
+        raise ResponseParsingError("SSE payload must be a JSON object", raw_data=str(data))
+
     status = str(data.get("status", "")).upper()
     error_code = data.get("error_code")
 
@@ -312,11 +328,19 @@ def process_sse_data(
 
         return _process_schematized_blocks(data, search_results, citation_mode, schematized_state)
 
+    text = data.get("text")
+    if schematized_state is not None and is_terminal_sse_data(data) and (
+        not text or (isinstance(text, str) and not text.strip())
+    ):
+        if schematized_state.answer is None and schematized_state.markdown_chunks:
+            schematized_state.answer = format_citations(
+                "".join(schematized_state.markdown_chunks),
+                citation_mode,
+                search_results,
+            )
+        return schematized_state.answer, list(schematized_state.chunks), search_results, {}
+
     if "text" not in data:
-        if schematized_state is not None and (
-            data.get("text_completed") or data.get("final_sse_message") or data.get("final")
-        ):
-            return schematized_state.answer, list(schematized_state.chunks), search_results, {}
         return None, [], search_results, {}
 
     try:

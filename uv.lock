@@ -1262,6 +1262,7 @@ all = [
     { name = "cryptography" },
     { name = "fastapi" },
     { name = "fastmcp" },
+    { name = "jsonschema" },
     { name = "platformdirs" },
     { name = "pyperclip" },
     { name = "rich" },
@@ -1269,6 +1270,7 @@ all = [
 ]
 api = [
     { name = "fastapi" },
+    { name = "jsonschema" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 cli = [
@@ -1314,6 +1316,7 @@ requires-dist = [
     { name = "curl-cffi", specifier = "~=0.16.0" },
     { name = "fastapi", marker = "extra == 'api'", specifier = "~=0.141.0" },
     { name = "fastmcp", marker = "extra == 'mcp'", specifier = "~=3.4.0" },
+    { name = "jsonschema", marker = "extra == 'api'", specifier = "~=4.26.0" },
     { name = "loguru", specifier = "~=0.7.0" },
     { name = "orjson", specifier = "~=3.11.0" },
     { name = "perplexity-webui-scraper", extras = ["cli", "api", "mcp"], marker = "extra == 'all'" },

@@ -61,16 +61,33 @@ class PerplexityResponseExtensions(BaseModel):
     thread_uuid: str
 
 
+class ChatCompletionToolCallFunction(BaseModel):
+    """Function payload within an emulated assistant tool call."""
+
+    name: str
+    arguments: str
+
+
+class ChatCompletionToolCall(BaseModel):
+    """OpenAI-compatible assistant tool call."""
+
+    id: str
+    type: Literal["function"] = "function"
+    function: ChatCompletionToolCallFunction
+
+
 class ChatCompletionMessage(BaseModel):
     """Message within a completion choice.
 
     Attributes:
         role: Always ``"assistant"`` for model responses.
-        content: The response text.
+        content: The response text, or ``None`` when tool calls are emitted.
+        tool_calls: Emulated function calls, when present.
     """
 
     role: Literal["assistant"] = "assistant"
     content: str | None = None
+    tool_calls: list[ChatCompletionToolCall] | None = None
 
 
 class ChatCompletionChoice(BaseModel):
@@ -84,7 +101,7 @@ class ChatCompletionChoice(BaseModel):
 
     index: int = 0
     message: ChatCompletionMessage
-    finish_reason: Literal["stop"] | None = "stop"
+    finish_reason: Literal["stop", "tool_calls"] | None = "stop"
 
 
 class ChatCompletionUsage(BaseModel):
@@ -128,24 +145,23 @@ class ChatCompletionResponse(BaseModel):
     def build(
         cls,
         model: str,
-        content: str,
+        content: str | None,
         thread_uuid: str | None = None,
+        tool_calls: list[ChatCompletionToolCall] | None = None,
     ) -> ChatCompletionResponse:
-        """Build a response from a model ID, answer text, and optional thread UUID.
+        """Build a response from answer text or emulated tool calls."""
+        finish_reason: Literal["stop", "tool_calls"] = "tool_calls" if tool_calls else "stop"
 
-        Args:
-            model: Model ID string used in the request.
-            content: The assistant's response text.
-            thread_uuid: UUID of the conversation thread (for follow-up support).
-
-        Returns:
-            A fully constructed :class:`ChatCompletionResponse`.
-        """
         return cls(
             id=f"chatcmpl-{uuid4().hex}",
             created=int(time()),
             model=model,
-            choices=[ChatCompletionChoice(message=ChatCompletionMessage(content=content))],
+            choices=[
+                ChatCompletionChoice(
+                    message=ChatCompletionMessage(content=content, tool_calls=tool_calls),
+                    finish_reason=finish_reason,
+                )
+            ],
             perplexity=PerplexityResponseExtensions(thread_uuid=thread_uuid) if thread_uuid else None,
         )
 

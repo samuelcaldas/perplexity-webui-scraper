@@ -3,9 +3,15 @@
 from __future__ import annotations
 
 from base64 import b64decode
-from typing import Any, Literal
+import binascii
+import json
+from typing import Any, Literal, Self
+from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, FiniteFloat, field_validator, model_validator
+
+from perplexity_webui_scraper._internal.constants import MAX_FILE_SIZE
+from perplexity_webui_scraper.api.tool_schema import validate_function_call, validate_function_schema
 
 
 class ContentPartText(BaseModel):
@@ -23,35 +29,184 @@ class ContentPartText(BaseModel):
 class ContentPartImageUrl(BaseModel):
     """An image content part within a multimodal message.
 
-    Supports both external URLs and base64 data URIs.  Only ``data:`` URIs
-    are decoded server-side; external URLs are ignored (to avoid unpredictable
-    network calls from the server).
-
     Attributes:
         type: Always ``"image_url"``.
-        image_url: Dict with a ``"url"`` key containing the image URL or
-            ``data:<mime>;base64,<data>`` string.
+        image_url: Dict with a ``"url"`` key containing a base64 data URI.
     """
 
     type: Literal["image_url"]
     image_url: dict[str, str]
+
+    @model_validator(mode="after")
+    def _validate_data_uri(self) -> Self:
+        """Validate image URL data URI syntax, MIME, size, and encoding."""
+        url = self.image_url.get("url")
+        if not url:
+            raise ValueError("image_url.url must be nonempty")
+        if not url.startswith("data:"):
+            raise ValueError("image_url.url must be an image data URI")
+
+        try:
+            header, encoded_data = url.split(",", 1)
+        except ValueError as error:
+            raise ValueError("image_url.url must contain base64 data") from error
+
+        if not header.lower().startswith("data:image/") or not header.lower().endswith(";base64"):
+            raise ValueError("image_url.url must contain a base64 image MIME")
+        if not encoded_data:
+            raise ValueError("image_url.url must contain base64 data")
+        if len(encoded_data) > ((MAX_FILE_SIZE + 2) // 3) * 4:
+            raise ValueError("image data exceeds size limit")
+
+        try:
+            decoded_data = b64decode(encoded_data, validate=True)
+        except (binascii.Error, ValueError) as error:
+            raise ValueError("image_url.url contains invalid base64 data") from error
+
+        if len(decoded_data) > MAX_FILE_SIZE:
+            raise ValueError("image data exceeds size limit")
+
+        return self
 
 
 ContentPart = ContentPartText | ContentPartImageUrl
 """Union of all supported content part types."""
 
 
+class FunctionDefinition(BaseModel):
+    """OpenAI function definition carried by a function tool."""
+
+    name: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
+    description: str | None = None
+    parameters: dict[str, Any] = Field(default_factory=dict)
+    strict: bool | None = None
+
+    @model_validator(mode="after")
+    def _validate_parameters_schema(self) -> Self:
+        """Reject function parameter schemas with invalid top-level shape."""
+        schema_type = self.parameters.get("type")
+        if schema_type is not None and schema_type != "object":
+            raise ValueError("parameters schema type must be 'object'")
+
+        properties = self.parameters.get("properties")
+        if properties is not None and not isinstance(properties, dict):
+            raise ValueError("parameters schema properties must be an object")
+
+        required = self.parameters.get("required")
+        if required is not None and (
+            not isinstance(required, list) or not all(isinstance(item, str) for item in required)
+        ):
+            raise ValueError("parameters schema required must be a list of strings")
+
+        validate_function_schema(self.parameters)
+
+        return self
+
+
+class FunctionTool(BaseModel):
+    """OpenAI function tool definition."""
+
+    type: Literal["function"]
+    function: FunctionDefinition
+
+
+class ToolChoiceFunction(BaseModel):
+    """Function selector used by OpenAI's explicit tool choice form."""
+
+    name: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
+
+
+class ExplicitToolChoice(BaseModel):
+    """OpenAI tool choice selecting one named function."""
+
+    type: Literal["function"]
+    function: ToolChoiceFunction
+
+
+ToolChoice = Literal["none", "auto", "required"] | ExplicitToolChoice
+"""Supported OpenAI tool choice values."""
+
+
+class ToolCallFunction(BaseModel):
+    """Function invocation emitted in an assistant tool call."""
+
+    name: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
+    arguments: str
+
+    @model_validator(mode="after")
+    def _validate_json_arguments(self) -> Self:
+        """Require arguments to be a standards-compliant JSON object string."""
+        try:
+            parsed_arguments = json.loads(self.arguments, parse_constant=self._reject_non_json_constant)
+        except (TypeError, ValueError, json.JSONDecodeError) as error:
+            raise ValueError("arguments must contain valid JSON") from error
+
+        if not isinstance(parsed_arguments, dict):
+            raise ValueError("arguments must contain a JSON object")  # noqa: TRY004
+
+        return self
+
+    @staticmethod
+    def _reject_non_json_constant(value: str) -> None:
+        raise ValueError(f"non-JSON constant: {value}")
+
+
+class AssistantToolCall(BaseModel):
+    """Function tool call emitted by an assistant message."""
+
+    id: str = Field(min_length=1)
+    type: Literal["function"]
+    function: ToolCallFunction
+
+
 class ChatMessage(BaseModel):
-    """A single message in a conversation.
+    """A single text, multimodal, assistant-tool, or tool-result message.
 
     Attributes:
-        role: Message author: ``"system"``, ``"user"``, or ``"assistant"``.
-        content: Either a plain string or a list of :data:`ContentPart` objects
-            for multimodal messages.
+        role: Message author: ``"system"``, ``"developer"``, ``"user"``,
+            ``"assistant"``, or ``"tool"``.
+        content: Either plain text, multimodal parts, or ``None`` for an
+            assistant message containing tool calls.
+        tool_calls: Function calls emitted by an assistant message.
+        tool_call_id: Assistant tool-call ID referenced by a tool result.
     """
 
-    role: Literal["system", "user", "assistant"]
-    content: str | list[ContentPart]
+    model_config = ConfigDict(extra="forbid")
+
+    role: Literal["system", "developer", "user", "assistant", "tool"]
+    content: str | list[ContentPart] | None = None
+    name: str | None = None
+    refusal: str | None = None
+    function_call: ToolCallFunction | None = None
+    tool_calls: list[AssistantToolCall] | None = None
+    tool_call_id: str | None = None
+
+    @model_validator(mode="after")
+    def _validate_role_fields(self) -> Self:
+        """Validate role-specific content and tool-call relationships."""
+        if self.role == "assistant":
+            if self.tool_call_id is not None:
+                raise ValueError("assistant messages cannot contain tool_call_id")
+            if self.content is None and not self.tool_calls and self.function_call is None and self.refusal is None:
+                raise ValueError("assistant content may be null only with a call or refusal")
+            return self
+
+        if self.role == "tool":
+            if not self.tool_call_id:
+                raise ValueError("tool messages require tool_call_id")
+            if self.content is None:
+                raise ValueError("tool messages require content")
+            if self.tool_calls is not None:
+                raise ValueError("tool messages cannot contain tool_calls")
+            return self
+
+        if self.content is None:
+            raise ValueError(f"{self.role} messages require content")
+        if self.tool_calls is not None:
+            raise ValueError(f"{self.role} messages cannot contain tool_calls")
+        if self.tool_call_id is not None:
+            raise ValueError(f"{self.role} messages cannot contain tool_call_id")
+        return self
 
     def text(self) -> str:
         """Return the plain-text portion of this message.
@@ -64,19 +219,20 @@ class ChatMessage(BaseModel):
         """
         if isinstance(self.content, str):
             return self.content
+        if not isinstance(self.content, list):
+            return ""
 
         return "\n".join(p.text for p in self.content if isinstance(p, ContentPartText))
 
     def image_bytes(self) -> list[tuple[bytes, str, str]]:
         """Return decoded base64 image parts as ``(data, filename, mimetype)`` tuples.
 
-        Only ``data:`` URIs are decoded.  External image URLs are silently
-        skipped to avoid server-side network calls.
+        Validated image data URIs are decoded server-side.
 
         Returns:
             List of ``(bytes, filename, mimetype)`` tuples.
         """
-        if isinstance(self.content, str):
+        if not isinstance(self.content, list):
             return []
 
         results: list[tuple[bytes, str, str]] = []
@@ -85,20 +241,13 @@ class ChatMessage(BaseModel):
             if not isinstance(part, ContentPartImageUrl):
                 continue
 
-            url = part.image_url.get("url", "")
-
-            if not url.startswith("data:"):
-                continue
-
-            try:
-                header, b64data = url.split(",", 1)
-                mimetype = header.split(":")[1].split(";")[0]
-                ext = mimetype.split("/")[-1].split("+")[0]
-                filename = f"image.{ext}"
-                data = b64decode(b64data)
-                results.append((data, filename, mimetype))
-            except Exception:
-                continue
+            url = part.image_url["url"]
+            header, b64data = url.split(",", 1)
+            mimetype = header.split(":", 1)[1].split(";", 1)[0]
+            ext = mimetype.split("/", 1)[1].split("+", 1)[0]
+            filename = f"image.{ext}"
+            data = b64decode(b64data, validate=True)
+            results.append((data, filename, mimetype))
 
         return results
 
@@ -111,8 +260,8 @@ class CoordinatesInput(BaseModel):
         longitude: Longitude in decimal degrees (-180 to +180).
     """
 
-    latitude: float
-    longitude: float
+    latitude: FiniteFloat = Field(ge=-90, le=90)
+    longitude: FiniteFloat = Field(ge=-180, le=180)
 
 
 class PerplexityExtensions(BaseModel):
@@ -167,6 +316,20 @@ class PerplexityExtensions(BaseModel):
     response_format: Literal["text", "json_object"] = "text"
     allow_risky_model: bool = False
     custom_model_mode: Literal["copilot", "search", "research"] = "copilot"
+
+    @field_validator("space_uuid", "thread_uuid")
+    @classmethod
+    def _validate_uuid(cls, value: str | None) -> str | None:
+        """Require UUID strings for Perplexity conversation identifiers."""
+        if value is None:
+            return None
+
+        try:
+            UUID(value)
+        except (ValueError, AttributeError, TypeError) as error:
+            raise ValueError("must be a valid UUID") from error
+
+        return value
 
     @model_validator(mode="before")
     @classmethod
@@ -228,7 +391,100 @@ class ChatCompletionRequest(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
-    model: str
-    messages: list[ChatMessage]
+    model: str = Field(min_length=1)
+    messages: list[ChatMessage] = Field(min_length=1)
     stream: bool = False
     perplexity: PerplexityExtensions | None = None
+    tools: list[FunctionTool] | None = None
+    tool_choice: ToolChoice | None = None
+    parallel_tool_calls: bool | None = None
+
+    @field_validator("model")
+    @classmethod
+    def _validate_model(cls, value: str) -> str:
+        """Reject blank model identifiers without changing valid values."""
+        if not value.strip():
+            raise ValueError("model must be nonempty")
+
+        return value
+
+    @model_validator(mode="after")
+    def _validate_tool_call_relationships(self) -> Self:
+        """Validate tool choices, declared calls, and contiguous result groups."""
+        self._validate_tool_request_options()
+        self._validate_message_calls()
+        return self
+
+    def _validate_tool_request_options(self) -> None:
+        """Reject unsupported stream/tool combinations and undeclared choices."""
+        if self.stream and self.tools:
+            raise ValueError("streaming tool calls are not supported")
+
+        if self.tool_choice == "required" and not self.tools:
+            raise ValueError("tool_choice='required' requires declared tools")
+
+        if isinstance(self.tool_choice, ExplicitToolChoice):
+            declared_names = {tool.function.name for tool in self.tools or []}
+            if self.tool_choice.function.name not in declared_names:
+                raise ValueError("tool_choice function must be declared in tools")
+
+        if self.tools is not None:
+            names = [tool.function.name for tool in self.tools]
+            if len(names) != len(set(names)):
+                raise ValueError("tools must not declare duplicate function names")
+
+    def _validate_message_calls(self) -> None:
+        """Validate assistant calls and require contiguous result groups."""
+        seen_tool_call_ids: set[str] = set()
+        message_index = 0
+
+        while message_index < len(self.messages):
+            message = self.messages[message_index]
+            if message.role == "tool":
+                raise ValueError(f"orphan tool_call_id: {message.tool_call_id}")
+
+            if message.role != "assistant":
+                message_index += 1
+                continue
+
+            self._validate_legacy_function_call(message)
+            if not message.tool_calls:
+                message_index += 1
+                continue
+
+            expected_ids = [tool_call.id for tool_call in message.tool_calls]
+            if len(expected_ids) != len(set(expected_ids)) or seen_tool_call_ids.intersection(expected_ids):
+                raise ValueError("duplicate tool call id")
+            seen_tool_call_ids.update(expected_ids)
+            self._validate_assistant_tool_calls(message)
+
+            for offset, expected_id in enumerate(expected_ids, start=1):
+                result_index = message_index + offset
+                if result_index >= len(self.messages):
+                    raise ValueError(f"orphan tool call: missing result for tool_call_id {expected_id}")
+                result = self.messages[result_index]
+                if result.role != "tool" or result.tool_call_id != expected_id:
+                    raise ValueError(f"skipped tool-call group: expected result for tool_call_id {expected_id}")
+
+            message_index += len(expected_ids) + 1
+
+    def _validate_legacy_function_call(self, message: ChatMessage) -> None:
+        """Validate legacy assistant function calls when tools are declared."""
+        if message.function_call is None:
+            return
+        validate_function_call(
+            message.function_call.name,
+            message.function_call.arguments,
+            self.tools,
+            "assistant function call",
+        )
+
+    def _validate_assistant_tool_calls(self, message: ChatMessage) -> None:
+        """Validate every assistant tool call against current declarations."""
+        for tool_call in message.tool_calls or []:
+            validate_function_call(
+                tool_call.function.name,
+                tool_call.function.arguments,
+                self.tools,
+                "assistant tool call",
+            )

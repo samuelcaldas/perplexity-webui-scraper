@@ -1,9 +1,15 @@
 from __future__ import annotations
 
+import pytest
 from pytest import raises
 
 from perplexity_webui_scraper._internal.exceptions import RateLimitError, ResponseParsingError
-from perplexity_webui_scraper.core.parser import SchematizedStreamState, parse_sse_line, process_sse_data
+from perplexity_webui_scraper.core.parser import (
+    SchematizedStreamState,
+    is_terminal_sse_data,
+    parse_sse_line,
+    process_sse_data,
+)
 
 
 def test_process_sse_data_raises_rate_limit_for_free_tier_error() -> None:
@@ -196,3 +202,76 @@ def test_process_sse_data_uses_markdown_chunks_when_final_answer_is_omitted() ->
     )
     assert answer == "PONG"
     assert chunks == ["PONG"]
+
+
+def test_terminal_frame_without_blocks_returns_accumulated_markdown_answer() -> None:
+    state = SchematizedStreamState()
+    answer, chunks, _, _ = process_sse_data(
+        {"blocks": [{"markdown_block": {"chunks": ["Accumulated", " answer"]}}]},
+        [],
+        "default",
+        state,
+    )
+    assert answer is None
+    assert chunks == ["Accumulated", " answer"]
+
+    answer, chunks, _, _ = process_sse_data(
+        {"text_completed": True, "final_sse_message": True},
+        [],
+        "default",
+        state,
+    )
+
+    assert answer == "Accumulated answer"
+    assert chunks == ["Accumulated", " answer"]
+
+
+def test_terminal_frame_with_empty_text_returns_accumulated_markdown_answer() -> None:
+    state = SchematizedStreamState()
+    process_sse_data(
+        {"blocks": [{"markdown_block": {"chunks": ["Accumulated answer"]}}]},
+        [],
+        "default",
+        state,
+    )
+
+    answer, _, _, _ = process_sse_data(
+        {"text": "", "text_completed": True},
+        [],
+        "default",
+        state,
+    )
+
+    assert answer == "Accumulated answer"
+
+
+def test_terminal_frame_with_whitespace_text_returns_accumulated_markdown_answer() -> None:
+    state = SchematizedStreamState()
+    process_sse_data(
+        {"blocks": [{"markdown_block": {"chunks": ["Accumulated answer"]}}]},
+        [],
+        "default",
+        state,
+    )
+
+    answer, _, _, _ = process_sse_data(
+        {"text": "   ", "final": True},
+        [],
+        "default",
+        state,
+    )
+
+    assert answer == "Accumulated answer"
+
+
+def test_terminal_flags_require_literal_true() -> None:
+    assert is_terminal_sse_data({"final": True}) is True
+    assert is_terminal_sse_data({"final": 1}) is False
+    assert is_terminal_sse_data({"final": "true"}) is False
+    assert is_terminal_sse_data({"final": "false"}) is False
+
+
+@pytest.mark.parametrize("line", ["data: not-json", 'data: [1, 2]', 'data: "text"'])
+def test_parse_sse_line_wraps_malformed_or_non_object_json(line: str) -> None:
+    with raises(ResponseParsingError):
+        parse_sse_line(line)

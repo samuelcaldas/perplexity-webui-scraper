@@ -6,16 +6,21 @@ session token or network access.
 
 from __future__ import annotations
 
+import asyncio
+from asyncio import Lock
 from time import time
+from types import SimpleNamespace
+from typing import cast
 from unittest.mock import MagicMock, patch
 
 from fastapi.testclient import TestClient
 from orjson import loads
 from pytest import fixture
 
+from perplexity_webui_scraper._internal.exceptions import ResponseParsingError
 from perplexity_webui_scraper.api.app import app
 from perplexity_webui_scraper.api.conversation_cache import _CachedConversation
-from perplexity_webui_scraper.api.routes.completions import _client_pool, _conversation_cache
+from perplexity_webui_scraper.api.routes.completions import _client_pool, _conversation_cache, _stream_response
 from perplexity_webui_scraper.core import Conversation
 
 
@@ -23,7 +28,7 @@ from perplexity_webui_scraper.core import Conversation
 
 TOKEN = "test-session-token"
 AUTH_HEADER = f"Bearer {TOKEN}"
-THREAD_UUID = "test-thread-uuid-1234"
+THREAD_UUID = "12345678-1234-5678-1234-567812345678"
 MODEL_ID = "openai/gpt-5.6-terra"
 
 
@@ -186,7 +191,7 @@ def test_invalid_thread_uuid_returns_404(http_client: TestClient) -> None:
             json={
                 "model": MODEL_ID,
                 "messages": [{"role": "user", "content": "Hello"}],
-                "perplexity": {"thread_uuid": "nonexistent-uuid"},
+                "perplexity": {"thread_uuid": "99999999-9999-9999-9999-999999999999"},
             },
             headers={"Authorization": AUTH_HEADER},
         )
@@ -260,7 +265,7 @@ def test_space_uuid_and_thread_uuid_together(http_client: TestClient) -> None:
                 "messages": [{"role": "user", "content": "Question in space"}],
                 "perplexity": {
                     "thread_uuid": THREAD_UUID,
-                    "space_uuid": "some-space-uuid",
+                    "space_uuid": "87654321-4321-8765-4321-876543218765",
                 },
             },
             headers={"Authorization": AUTH_HEADER},
@@ -333,3 +338,64 @@ def test_no_perplexity_block_works_as_before(http_client: TestClient) -> None:
 
     # Should have created a new conversation
     mock_client.create_conversation.assert_called_once()
+
+
+class _FailingStreamConversation:
+    uuid = THREAD_UUID
+
+    def __iter__(self):
+        yield SimpleNamespace(last_chunk="partial", answer=None)
+        raise ResponseParsingError("invalid terminal frame")
+
+
+def test_stream_failure_emits_error_and_releases_token_lock() -> None:
+    async def collect() -> list[str]:
+        lock = Lock()
+        await lock.acquire()
+        lines = [
+            line
+            async for line in _stream_response(
+                cast("Conversation", _FailingStreamConversation()),
+                MODEL_ID,
+                TOKEN,
+                lock,
+            )
+        ]
+        assert not lock.locked()
+        return lines
+
+    lines = asyncio.run(collect())
+    assert any('"error"' in line for line in lines)
+    assert not any('"finish_reason":"stop"' in line for line in lines)
+    assert (TOKEN, THREAD_UUID) not in _conversation_cache._store
+
+
+def test_continuation_rejects_incompatible_model_config(http_client: TestClient) -> None:
+    mock_conv = _make_mock_conversation()
+    mock_client = _make_mock_client(mock_conv)
+
+    with patch("perplexity_webui_scraper.api.routes.completions._client_pool.get_or_create", return_value=mock_client):
+        first = http_client.post(
+            "/v1/chat/completions",
+            json={
+                "model": MODEL_ID,
+                "messages": [{"role": "user", "content": "Track this."}],
+                "perplexity": {"search_focus": "web"},
+            },
+            headers={"Authorization": AUTH_HEADER},
+        )
+        assert first.status_code == 200
+
+        second = http_client.post(
+            "/v1/chat/completions",
+            json={
+                "model": MODEL_ID,
+                "messages": [{"role": "user", "content": "Continue."}],
+                "perplexity": {"thread_uuid": THREAD_UUID, "search_focus": "writing"},
+            },
+            headers={"Authorization": AUTH_HEADER},
+        )
+
+    assert second.status_code == 400
+    assert "configuration" in second.json()["error"]["message"]
+    assert mock_conv.ask.call_count == 1

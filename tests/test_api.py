@@ -5,7 +5,13 @@ from unittest.mock import MagicMock, patch
 from fastapi.testclient import TestClient
 from pytest import fixture, warns
 
-from perplexity_webui_scraper._internal.exceptions import FileAccessError, ModelAccessError, ModelRiskWarning
+from perplexity_webui_scraper._internal.exceptions import (
+    AuthenticationError,
+    FileAccessError,
+    ModelAccessError,
+    ModelRiskWarning,
+    PerplexityError,
+)
 from perplexity_webui_scraper.api.app import app
 from perplexity_webui_scraper.core import Conversation
 from perplexity_webui_scraper.models.registry import MODELS
@@ -270,3 +276,96 @@ def test_system_prompt_concatenation(mock_get_or_create: MagicMock, client: Test
     assert "You are a helpful physics teacher." in actual_query
     assert "Explain gravity." in actual_query
     assert "[System]:" in actual_query
+
+
+def test_authenticated_model_catalog_filters_by_account_tier(client: TestClient) -> None:
+    mock_client = MagicMock()
+    mock_client.get_account_profile.return_value = MagicMock(account_tier="free")
+    expected_ids = {
+        model.id for model in MODELS.list_all() if model.status == "available" and model.min_tier in {None, "free"}
+    }
+
+    with patch(
+        "perplexity_webui_scraper.api.auth.client_pool.get_or_create",
+        return_value=mock_client,
+    ) as mock_get_or_create:
+        response = client.get("/v1/models", headers={"Authorization": AUTH_HEADER})
+
+    assert response.status_code == 200
+    assert {item["id"] for item in response.json()["data"]} == expected_ids
+    mock_get_or_create.assert_called_once_with(TOKEN)
+    mock_client.get_account_profile.assert_called_once_with()
+
+
+def test_authenticated_model_catalog_falls_back_on_profile_failure(client: TestClient) -> None:
+    mock_client = MagicMock()
+    mock_client.get_account_profile.side_effect = PerplexityError("profile unavailable")
+    expected_ids = {model.id for model in MODELS.list_all()}
+
+    with patch(
+        "perplexity_webui_scraper.api.auth.client_pool.get_or_create",
+        return_value=mock_client,
+    ):
+        response = client.get("/v1/models", headers={"Authorization": AUTH_HEADER})
+
+    assert response.status_code == 200
+    assert {item["id"] for item in response.json()["data"]} == expected_ids
+
+
+def test_malformed_model_catalog_auth_header_returns_401(client: TestClient) -> None:
+    response = client.get("/v1/models", headers={"Authorization": "Basic token123"})
+
+    assert response.status_code == 401
+    assert "Missing or invalid Authorization header" in response.json()["error"]["message"]
+
+
+def test_whitespace_model_catalog_bearer_token_returns_401(client: TestClient) -> None:
+    response = client.get("/v1/models", headers={"Authorization": "Bearer   "})
+
+    assert response.status_code == 401
+    assert response.json()["error"]["message"] == "Bearer token is empty."
+
+
+def test_model_catalog_does_not_fallback_when_client_creation_fails() -> None:
+    client = TestClient(app, raise_server_exceptions=False)
+
+    with patch(
+        "perplexity_webui_scraper.api.auth.client_pool.get_or_create",
+        side_effect=RuntimeError("client construction failed"),
+    ):
+        response = client.get("/v1/models", headers={"Authorization": AUTH_HEADER})
+
+    assert response.status_code == 500
+
+
+def test_authenticated_model_catalog_discards_client_after_profile_failure(client: TestClient) -> None:
+    mock_client = MagicMock()
+    mock_client.get_account_profile.side_effect = PerplexityError("profile unavailable")
+    expected_ids = {model.id for model in MODELS.list_all()}
+
+    with (
+        patch(
+            "perplexity_webui_scraper.api.auth.client_pool.get_or_create",
+            return_value=mock_client,
+        ),
+        patch("perplexity_webui_scraper.api.auth.client_pool.discard") as mock_discard,
+    ):
+        response = client.get("/v1/models", headers={"Authorization": AUTH_HEADER})
+
+    assert response.status_code == 200
+    assert {item["id"] for item in response.json()["data"]} == expected_ids
+    mock_discard.assert_called_once_with(TOKEN, mock_client)
+
+
+def test_authenticated_model_catalog_returns_auth_error_for_invalid_bearer(client: TestClient) -> None:
+    mock_client = MagicMock()
+    mock_client.get_account_profile.side_effect = AuthenticationError()
+
+    with patch(
+        "perplexity_webui_scraper.api.auth.client_pool.get_or_create",
+        return_value=mock_client,
+    ):
+        response = client.get("/v1/models", headers={"Authorization": AUTH_HEADER})
+
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "authentication_error"

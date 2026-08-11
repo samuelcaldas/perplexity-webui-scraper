@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+from copy import deepcopy
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from perplexity_webui_scraper._internal.constants import ENDPOINT_AUTH_SESSION, ENDPOINT_USER_SETTINGS
+from perplexity_webui_scraper._internal.exceptions import StreamingError
 from perplexity_webui_scraper.core.account import (
     AccountProfile,
     AccountSession,
@@ -17,6 +20,8 @@ from perplexity_webui_scraper.core.account import (
 from perplexity_webui_scraper.core.files import _FileInfo, upload_file, validate_files
 from perplexity_webui_scraper.core.parser import (
     SchematizedStreamState,
+    is_done_sse_line,
+    is_terminal_sse_data,
     parse_sse_line,
     process_sse_data,
 )
@@ -36,6 +41,19 @@ if TYPE_CHECKING:
 
 
 _DEFAULT_MODEL: str = "perplexity/best"
+
+
+@dataclass(slots=True)
+class _ConversationState:
+    """Snapshot used to roll back incomplete requests."""
+
+    backend_uuid: str | None
+    read_write_token: str | None
+    answer: str | None
+    chunks: list[str]
+    search_results: list[SearchResultItem]
+    raw_data: dict[str, Any]
+    schematized_state: SchematizedStreamState
 
 
 class Conversation:
@@ -67,6 +85,7 @@ class Conversation:
         "_schematized_state",
         "_search_results",
         "_stream_generator",
+        "_stream_snapshot",
     )
 
     def __init__(self, http: HTTPClient, config: ConversationConfig) -> None:
@@ -81,6 +100,7 @@ class Conversation:
         self._raw_data: dict[str, Any] = {}
         self._schematized_state = SchematizedStreamState()
         self._stream_generator: Generator[Response, None, None] | None = None
+        self._stream_snapshot: _ConversationState | None = None
 
     # ------------------------------------------------------------------
     # Read-only properties
@@ -155,8 +175,14 @@ class Conversation:
         Yields:
             Incremental Response objects.
         """
-        if self._stream_generator is not None:
+        if self._stream_generator is None:
+            return
+
+        try:
             yield from self._stream_generator
+        finally:
+            if self._stream_snapshot is not None:
+                self._restore_state(self._stream_snapshot)
             self._stream_generator = None
 
     # ------------------------------------------------------------------
@@ -170,32 +196,40 @@ class Conversation:
         files: list[FileInput] | None,
         stream: bool = False,
     ) -> None:
-        """Orchestrate file upload, payload construction, and HTTP dispatch."""
+        """Orchestrate request work and restore prior state on failure."""
+        previous_state = self._snapshot_state()
         self._reset_state()
 
-        file_urls: list[str] = []
+        try:
+            file_urls = self._upload_files(files)
+            payload = build_payload(
+                query=query,
+                model=model,
+                file_urls=file_urls,
+                config=self._config,
+                backend_uuid=self._backend_uuid,
+                read_write_token=self._read_write_token,
+            )
+            self._http.init_search(query)
 
-        if files:
-            validated: list[_FileInfo] = validate_files(files)
+            if stream:
+                self._stream_snapshot = previous_state
+                self._stream_generator = self._stream(payload, previous_state)
+                return
 
-            with ThreadPoolExecutor() as executor:
-                file_urls = list(executor.map(lambda f: upload_file(f, self._http), validated))
-
-        payload = build_payload(
-            query=query,
-            model=model,
-            file_urls=file_urls,
-            config=self._config,
-            backend_uuid=self._backend_uuid,
-            read_write_token=self._read_write_token,
-        )
-
-        self._http.init_search(query)
-
-        if stream:
-            self._stream_generator = self._stream(payload)
-        else:
             self._complete(payload)
+        except BaseException:
+            self._restore_state(previous_state)
+            raise
+
+    def _upload_files(self, files: list[FileInput] | None) -> list[str]:
+        """Validate and upload request files."""
+        if not files:
+            return []
+
+        validated: list[_FileInfo] = validate_files(files)
+        with ThreadPoolExecutor() as executor:
+            return list(executor.map(lambda file: upload_file(file, self._http), validated))
 
     def _validate_request_access(self, model: Model, has_files: bool) -> Model:
         """Ensure the account can use the selected model and attachments."""
@@ -224,6 +258,37 @@ class Conversation:
         self._raw_data = {}
         self._schematized_state = SchematizedStreamState()
         self._stream_generator = None
+        self._stream_snapshot = None
+
+    def _snapshot_state(self) -> _ConversationState:
+        """Copy mutable response state before starting a new request."""
+        return _ConversationState(
+            backend_uuid=self._backend_uuid,
+            read_write_token=self._read_write_token,
+            answer=self._answer,
+            chunks=list(self._chunks),
+            search_results=list(self._search_results),
+            raw_data=deepcopy(self._raw_data),
+            schematized_state=deepcopy(self._schematized_state),
+        )
+
+    def _restore_state(self, state: _ConversationState) -> None:
+        """Restore response state captured before failed or cancelled request."""
+        self._backend_uuid = state.backend_uuid
+        self._read_write_token = state.read_write_token
+        self._answer = state.answer
+        self._chunks = list(state.chunks)
+        self._search_results = list(state.search_results)
+        self._raw_data = deepcopy(state.raw_data)
+        self._schematized_state = deepcopy(state.schematized_state)
+        self._stream_generator = None
+        self._stream_snapshot = None
+
+    def _has_completed_answer(self) -> bool:
+        """Return whether current state contains non-empty answer content."""
+        if self._answer and self._answer.strip():
+            return True
+        return any(chunk.strip() for chunk in self._chunks)
 
     def _apply_sse_data(self, data: dict[str, Any]) -> None:
         """Apply a single parsed SSE data chunk to the conversation state.
@@ -267,24 +332,64 @@ class Conversation:
         )
 
     def _complete(self, payload: dict[str, Any]) -> None:
-        """Run the SSE stream to completion (non-streaming mode)."""
+        """Run SSE stream to completion with terminal answer validation."""
+        completed = False
         for line in self._http.stream_ask(payload):
+            if is_done_sse_line(line):
+                self._require_completed_answer()
+                completed = True
+                break
+
             data = parse_sse_line(line)
+            if data is None:
+                continue
 
-            if data:
-                self._apply_sse_data(data)
+            self._apply_sse_data(data)
+            if is_terminal_sse_data(data):
+                self._require_completed_answer()
+                completed = True
+                break
 
-                if data.get("final"):
+        if not completed:
+            raise StreamingError("upstream stream ended before terminal event")
+
+    def _stream(
+        self,
+        payload: dict[str, Any],
+        previous_state: _ConversationState,
+    ) -> Generator[Response, None, None]:
+        """Yield response snapshots and roll back incomplete streams."""
+        completed = False
+        try:
+            for line in self._http.stream_ask(payload):
+                if is_done_sse_line(line):
+                    self._require_completed_answer()
+                    completed = True
                     break
 
-    def _stream(self, payload: dict[str, Any]) -> Generator[Response, None, None]:
-        """Yield :class:`Response` snapshots for each SSE data frame."""
-        for line in self._http.stream_ask(payload):
-            data = parse_sse_line(line)
+                data = parse_sse_line(line)
+                if data is None:
+                    continue
 
-            if data:
                 self._apply_sse_data(data)
+                if is_terminal_sse_data(data):
+                    self._require_completed_answer()
+                    completed = True
                 yield self._build_response()
-
-                if data.get("final"):
+                if completed:
                     break
+
+            if not completed:
+                raise StreamingError("upstream stream ended before terminal event")
+            self._stream_snapshot = None
+        except BaseException:
+            self._restore_state(previous_state)
+            raise
+        finally:
+            if not completed:
+                self._restore_state(previous_state)
+
+    def _require_completed_answer(self) -> None:
+        """Reject terminal events that contain no answer content."""
+        if not self._has_completed_answer():
+            raise StreamingError("terminal event did not contain a completed answer")

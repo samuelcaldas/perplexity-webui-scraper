@@ -435,9 +435,12 @@ Returns `HTTP 401` if the header is missing or malformed.
 
 | Field      | Type   | Required | Description                                                        |
 | ---------- | ------ | -------- | ------------------------------------------------------------------ |
-| `model`    | `str`  | yes      | Any model ID from `/v1/models` (e.g. `"perplexity/best"`)          |
-| `messages` | `list` | yes      | List of `{role, content}` messages (`system`, `user`, `assistant`) |
-| `stream`   | `bool` | no       | Enable SSE streaming (default: `false`)                            |
+| `model`       | `str`        | yes      | Any model ID from `/v1/models` (e.g. `"perplexity/best"`)                                  |
+| `messages`    | `list`       | yes      | OpenAI chat messages (`system`, `developer`, `user`, `assistant`, `tool`)                  |
+| `stream`      | `bool`       | no       | Enable SSE streaming (default: `false`)                                                    |
+| `tools`       | `list`       | no       | Function tool declarations; non-streaming responses may return emulated `tool_calls`      |
+| `tool_choice` | `str/object` | no       | `none`, `auto`, `required`, or one declared function                                            |
+| `perplexity`  | `object`     | no       | Perplexity options, including `thread_uuid`, `space_uuid`, model-risk, and response format |
 
 > Any extra OpenAI fields (`temperature`, `top_p`, `n`, `max_tokens`, etc.) are accepted for client compatibility but silently ignored.
 
@@ -460,7 +463,9 @@ Returns `HTTP 401` if the header is missing or malformed.
 }
 ```
 
-**Streaming** (`stream: true`) uses Server-Sent Events, one `data: {...}` JSON chunk per event, ending with `data: [DONE]`.
+**Streaming** (`stream: true`) uses Server-Sent Events, one `data: {...}` JSON chunk per event. Successful streams emit an assistant role chunk, zero or more content deltas, one `finish_reason: "stop"` chunk, and `data: [DONE]`. If Perplexity fails after headers are sent, the stream emits one `data: {"error": ...}` event and does not emit a success finish chunk or `[DONE]`.
+
+Streams and non-streaming requests are serialized per Bearer token because each cached Perplexity session owns mutable conversation and HTTP state. A slow stream therefore holds that token's session until completion or disconnect; other tokens remain independent.
 
 ```python
 from openai import OpenAI
@@ -476,6 +481,50 @@ response = client.chat.completions.create(
 )
 print(response.choices[0].message.content)
 ```
+
+### Continuing a Thread
+
+Every successful completion includes `perplexity.thread_uuid`. Send that UUID in a later request to reuse the cached conversation and submit only the latest user message. Cache entries expire after 30 minutes of inactivity and are process-local; run one API worker or use sticky routing when continuation is required.
+
+```python
+first = client.chat.completions.create(
+    model="perplexity/best",
+    messages=[{"role": "user", "content": "Track this topic."}],
+)
+thread_uuid = first.perplexity.thread_uuid
+
+follow_up = client.chat.completions.create(
+    model="perplexity/best",
+    messages=[{"role": "user", "content": "What changed since last time?"}],
+    extra_body={"perplexity": {"thread_uuid": thread_uuid}},
+)
+```
+
+### Function Tools
+
+The API accepts OpenAI function tool declarations. Perplexity has no native tool-call event contract, so the non-streaming route injects a strict sentinel instruction and translates one valid provider-emitted sentinel into an assistant `tool_calls` response. It never executes tools. Submit the tool result yourself, then continue the same thread with an assistant tool-call message followed by a `role: "tool"` result message.
+
+```python
+response = client.chat.completions.create(
+    model="perplexity/best",
+    messages=[{"role": "user", "content": "What is weather in Boston?"}],
+    tools=[{
+        "type": "function",
+        "function": {
+            "name": "get_weather",
+            "description": "Get current weather.",
+            "parameters": {
+                "type": "object",
+                "properties": {"location": {"type": "string"}},
+                "required": ["location"],
+            },
+        },
+    }],
+    tool_choice="auto",
+)
+```
+
+With `tool_choice="auto"`, malformed or undeclared provider signals remain ordinary assistant text. With `tool_choice="required"` or a named function, a missing or invalid provider signal returns `HTTP 400` instead of silently producing a normal text completion. `tool_choice="none"` disables tool emulation. Streaming requests with declared tools are rejected because tool-call SSE is not implemented; use non-streaming mode for emulated tool calls.
 
 ### Passing Optional Arguments
 
@@ -534,9 +583,23 @@ response = client.chat.completions.create(
 
 ### Multimodal Uploads / Images
 
-The REST API fully implements OpenAI's Vision API standard. This means **any compatible chatbot frontend** (like Open WebUI, LibreChat, Chatbox, or AnythingLLM) will work out-of-the-box. When users upload files in these generic UIs, the chatbot automatically encodes the file to a base64 Data URI and sends it to our API as an `image_url` part.
+The REST API accepts base64-encoded image Data URIs in OpenAI-compatible `image_url` parts. Compatible chatbot frontends (such as Open WebUI, LibreChat, Chatbox, or AnythingLLM) can send image uploads this way. Images are decoded and uploaded securely to Perplexity before querying the model.
 
-Base64-encoded Data URIs are automatically extracted and uploaded securely to Perplexity before querying the model.
+Only `data:image/...;base64,...` URLs are accepted. External image URLs and PDF Data URIs are rejected. Upload PDFs through the core library's `files` parameter instead:
+
+```python
+from pathlib import Path
+
+from perplexity_webui_scraper import Perplexity
+
+pdf_bytes = Path("document.pdf").read_bytes()
+client = Perplexity(session_token="YOUR_SESSION_TOKEN")
+conversation = client.create_conversation()
+conversation.ask(
+    "Summarize this PDF.",
+    files=[(pdf_bytes, "document.pdf", "application/pdf")],
+)
+```
 
 **Example with OpenAI Python SDK:**
 
@@ -547,8 +610,8 @@ from openai import OpenAI
 client = OpenAI(base_url="http://localhost:8000/v1", api_key="YOUR_SESSION_TOKEN")
 
 # Read an image and encode it to base64
-with open("document.pdf", "rb") as file:
-    pdf_b64 = base64.b64encode(file.read()).decode("utf-8")
+with open("image.png", "rb") as file:
+    image_b64 = base64.b64encode(file.read()).decode("utf-8")
 
 response = client.chat.completions.create(
     model="perplexity/best",
@@ -556,8 +619,8 @@ response = client.chat.completions.create(
         {
             "role": "user",
             "content": [
-                {"type": "text", "text": "What is in this document?"},
-                {"type": "image_url", "image_url": {"url": f"data:application/pdf;base64,{pdf_b64}"}},
+                {"type": "text", "text": "What is in this image?"},
+                {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{image_b64}"}},
             ],
         }
     ],

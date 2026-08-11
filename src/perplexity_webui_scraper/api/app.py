@@ -10,7 +10,9 @@ from perplexity_webui_scraper._internal.exceptions import (
     FileAccessError,
     ModelAccessError,
     ModelStatusError,
+    PerplexityError,
 )
+from perplexity_webui_scraper.api.error_handling import error_response_for
 from perplexity_webui_scraper.api.routes.completions import router as completions_router
 from perplexity_webui_scraper.api.routes.models import router as models_router
 from perplexity_webui_scraper.api.schemas.errors import ErrorDetail, ErrorResponse
@@ -100,6 +102,15 @@ def create_app() -> FastAPI:
                 )
             ).model_dump(),
         )
+
+    @application.exception_handler(PerplexityError)
+    async def _perplexity_exception_handler(
+        _request: Request,
+        exc: PerplexityError,
+    ) -> JSONResponse:
+        """Return library failures in a safe OpenAI-compatible envelope."""
+        response_status, response = error_response_for(exc)
+        return JSONResponse(status_code=response_status, content=response.model_dump())
 
     @application.exception_handler(ModelStatusError)
     async def _model_status_exception_handler(

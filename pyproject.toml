@@ -52,6 +52,7 @@ cli = [
 ]
 api = [
     "fastapi~=0.141.0",
+    "jsonschema~=4.26.0",
     "uvicorn[standard]~=0.52.0",
 ]
 mcp = [

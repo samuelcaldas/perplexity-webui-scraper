@@ -55,7 +55,8 @@ class _FakeHTTP:
     def stream_ask(self, payload: dict[str, Any]):
         self.stream_called = True
         self.ask_payload = payload
-        yield b""
+        yield b'data: {"text":"{\\"answer\\":\\"ok\\"}"}\n'
+        yield b'data: {"final": true}\n'
 
 
 def _session_payload(subscription_tier: str, payment_tier: str = "free_with_pm") -> dict[str, Any]:
