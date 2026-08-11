@@ -81,6 +81,7 @@ lint = [
 ]
 test = [
     "httpx~=0.28.0",
+    "openai~=2.54.0",
     "pytest~=9.1.0",
 ]
 

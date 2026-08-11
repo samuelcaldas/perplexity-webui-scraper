@@ -508,18 +508,20 @@ The API accepts OpenAI function tool declarations. Perplexity has no native tool
 response = client.chat.completions.create(
     model="perplexity/best",
     messages=[{"role": "user", "content": "What is weather in Boston?"}],
-    tools=[{
-        "type": "function",
-        "function": {
-            "name": "get_weather",
-            "description": "Get current weather.",
-            "parameters": {
-                "type": "object",
-                "properties": {"location": {"type": "string"}},
-                "required": ["location"],
+    tools=[
+        {
+            "type": "function",
+            "function": {
+                "name": "get_weather",
+                "description": "Get current weather.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"location": {"type": "string"}},
+                    "required": ["location"],
+                },
             },
-        },
-    }],
+        }
+    ],
     tool_choice="auto",
 )
 ```

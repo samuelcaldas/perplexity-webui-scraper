@@ -271,7 +271,7 @@ def test_terminal_flags_require_literal_true() -> None:
     assert is_terminal_sse_data({"final": "false"}) is False
 
 
-@pytest.mark.parametrize("line", ["data: not-json", 'data: [1, 2]', 'data: "text"'])
+@pytest.mark.parametrize("line", ["data: not-json", "data: [1, 2]", 'data: "text"'])
 def test_parse_sse_line_wraps_malformed_or_non_object_json(line: str) -> None:
     with raises(ResponseParsingError):
         parse_sse_line(line)

@@ -329,8 +329,10 @@ def process_sse_data(
         return _process_schematized_blocks(data, search_results, citation_mode, schematized_state)
 
     text = data.get("text")
-    if schematized_state is not None and is_terminal_sse_data(data) and (
-        not text or (isinstance(text, str) and not text.strip())
+    if (
+        schematized_state is not None
+        and is_terminal_sse_data(data)
+        and (not text or (isinstance(text, str) and not text.strip()))
     ):
         if schematized_state.answer is None and schematized_state.markdown_chunks:
             schematized_state.answer = format_citations(

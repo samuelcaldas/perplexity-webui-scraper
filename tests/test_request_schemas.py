@@ -482,9 +482,7 @@ def test_model_validate_rejects_assistant_calls_outside_declared_schema(
     message: str,
 ) -> None:
     with pytest.raises(ValidationError, match=message):
-        ChatCompletionRequest.model_validate(
-            _request(_assistant_call_messages(name, arguments), tools=[FUNCTION_TOOL])
-        )
+        ChatCompletionRequest.model_validate(_request(_assistant_call_messages(name, arguments), tools=[FUNCTION_TOOL]))
 
 
 def test_model_validate_accepts_tools_omitted_historical_replay() -> None:
@@ -499,17 +497,31 @@ def test_model_validate_accepts_tools_omitted_historical_replay() -> None:
 @pytest.mark.parametrize(
     "messages",
     [
-        [{"role": "assistant", "content": None, "tool_calls": [{
-            "id": "call_1",
-            "type": "function",
-            "function": {"name": "get_weather", "arguments": "{}"},
-        }]}],
         [
-            {"role": "assistant", "content": None, "tool_calls": [{
-                "id": "call_1",
-                "type": "function",
-                "function": {"name": "get_weather", "arguments": "{}"},
-            }]},
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": "call_1",
+                        "type": "function",
+                        "function": {"name": "get_weather", "arguments": "{}"},
+                    }
+                ],
+            }
+        ],
+        [
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": "call_1",
+                        "type": "function",
+                        "function": {"name": "get_weather", "arguments": "{}"},
+                    }
+                ],
+            },
             {"role": "user", "content": "interleaved"},
             {"role": "tool", "tool_call_id": "call_1", "content": "{}"},
         ],

@@ -264,9 +264,7 @@ def test_tool_result_continuation_is_accepted_and_deterministic(client: TestClie
     ]
     _conversation_cache._store[(TOKEN, THREAD_UUID)] = _CachedConversation(
         conversation=conversation,
-        pending_tool_calls=(
-            {"id": "call_1", "name": "get_weather", "arguments": '{"location":"Boston"}'},
-        ),
+        pending_tool_calls=({"id": "call_1", "name": "get_weather", "arguments": '{"location":"Boston"}'},),
     )
 
     with patch(
@@ -464,9 +462,7 @@ def test_required_tool_protocol_failure_restores_cached_state_and_pending_metada
     def mutate_cached_answer(instance: Conversation, *_args: object, **_kwargs: object) -> None:
         instance._answer = "invalid provider answer"
 
-    pending_tool_calls = (
-        {"id": "call_1", "name": "get_weather", "arguments": '{"location":"Boston"}'},
-    )
+    pending_tool_calls = ({"id": "call_1", "name": "get_weather", "arguments": '{"location":"Boston"}'},)
     cached = _CachedConversation(conversation=conversation, pending_tool_calls=pending_tool_calls)
     _conversation_cache._store[(TOKEN, THREAD_UUID)] = cached
     provider = MagicMock()
@@ -517,9 +513,7 @@ def test_provider_error_restores_cached_continuation_state(client: TestClient) -
     conversation = Conversation(MagicMock(), ConversationConfig(model=MODEL_ID))
     conversation._backend_uuid = THREAD_UUID
     conversation._answer = "stable cached answer"
-    pending_tool_calls = (
-        {"id": "call_1", "name": "get_weather", "arguments": '{"location":"Boston"}'},
-    )
+    pending_tool_calls = ({"id": "call_1", "name": "get_weather", "arguments": '{"location":"Boston"}'},)
     _conversation_cache._store[(TOKEN, THREAD_UUID)] = _CachedConversation(
         conversation=conversation,
         pending_tool_calls=pending_tool_calls,
@@ -596,9 +590,7 @@ def test_cached_thread_rejects_fabricated_tool_call(client: TestClient) -> None:
     provider = _make_client(conversation)
     _conversation_cache._store[(TOKEN, THREAD_UUID)] = _CachedConversation(
         conversation=conversation,
-        pending_tool_calls=(
-            {"id": "call_1", "name": "get_weather", "arguments": '{"location":"Boston"}'},
-        ),
+        pending_tool_calls=({"id": "call_1", "name": "get_weather", "arguments": '{"location":"Boston"}'},),
     )
 
     with patch(
@@ -654,7 +646,7 @@ def test_cached_thread_rejects_fabricated_completed_tool_history(client: TestCli
                             {
                                 "id": "fabricated",
                                 "type": "function",
-                                "function": {"name": "get_weather", "arguments": "{\"location\":\"Boston\"}"},
+                                "function": {"name": "get_weather", "arguments": '{"location":"Boston"}'},
                             }
                         ],
                     },
