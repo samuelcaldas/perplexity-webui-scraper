@@ -32,10 +32,13 @@ class ModelRegistry:
     """
 
     _models: dict[str, Model]
+    _aliases: dict[str, Model]
 
     def __init__(self, raw_models: list[dict[str, object]] | None = None) -> None:
         """Load models from the bundled ``models.json`` static asset."""
-        self._models = self._load(raw_models if raw_models is not None else self._read_static_models())
+        self._models, self._aliases = self._load(
+            raw_models if raw_models is not None else self._read_static_models()
+        )
 
     @staticmethod
     def _read_static_models() -> list[dict[str, object]]:
@@ -55,9 +58,10 @@ class ModelRegistry:
         return data
 
     @staticmethod
-    def _load(raw_models: list[dict[str, object]]) -> dict[str, Model]:
-        """Validate raw model data and return a model mapping keyed by ID."""
+    def _load(raw_models: list[dict[str, object]]) -> tuple[dict[str, Model], dict[str, Model]]:
+        """Validate raw model data and return model and alias mappings."""
         models: dict[str, Model] = {}
+        aliases: dict[str, Model] = {}
         tool_names: set[str] = set()
 
         for item in raw_models:
@@ -72,32 +76,63 @@ class ModelRegistry:
             models[model.id] = model
             tool_names.add(model.tool_name)
 
-        return models
+            for alias in model.aliases:
+                aliases[alias] = model
 
-    def resolve(self, model_id: str) -> Model:
-        """Look up a model by its canonical string ID.
+        return models, aliases
+
+    def is_registered(self, model_id: str) -> bool:
+        """Return whether model_id is present in registered models or aliases."""
+        return model_id in self._models or model_id in self._aliases
+
+    def resolve(self, model_id: str, *, fallback_dynamic: bool = False) -> Model:
+        """Look up a model by its canonical string ID or alias.
 
         Args:
             model_id: The model identifier, e.g. ``"perplexity/best"``.
+            fallback_dynamic: Whether to create a dynamic model if not found.
 
         Returns:
             The matching :class:`Model` instance.
 
         Raises:
-            ValueError: If ``model_id`` is not registered.
+            ValueError: If ``model_id`` is not registered and fallback_dynamic is False.
         """
         if model_id in self._models:
             return self._models[model_id]
 
+        if model_id in self._aliases:
+            return self._aliases[model_id]
+
+        if fallback_dynamic:
+            provider = model_id.split("/", 1)[0] if "/" in model_id else "custom"
+            identifier = model_id.split("/", 1)[1] if "/" in model_id else model_id
+            return Model(
+                id=model_id,
+                name=f"Dynamic model ({model_id})",
+                description="Dynamically resolved unlisted model identifier.",
+                identifier=identifier,
+                tool_name=f"pplx_dynamic_{identifier.replace('-', '_').replace('.', '_')}"[:64],
+                provider=provider,
+                min_tier=None,
+                mode="copilot",
+                status="unknown",
+            )
+
         available = ", ".join(f'"{m}"' for m in self._models)
         raise ValueError(f"Unknown model {model_id!r}. Available models: {available}")
 
-    def list_all(self) -> list[Model]:
+    def list_all(self, *, only_available: bool = False) -> list[Model]:
         """Return all registered :class:`Model` instances in definition order.
 
+        Args:
+            only_available: If True, returns only models with status == "available".
+
         Returns:
-            List of all models loaded from ``models.json``.
+            List of models loaded from ``models.json``.
         """
+        if only_available:
+            return [m for m in self._models.values() if m.status == "available"]
         return list(self._models.values())
 
     def resolve_for_use(
@@ -106,6 +141,9 @@ class ModelRegistry:
         *,
         allow_risky_model: bool = False,
         custom_model_mode: ModelMode = "copilot",
+        allow_unregistered: bool = False,
+        reasoning_effort: str | None = None,
+        thinking: bool | None = None,
     ) -> Model:
         """Resolve a model and enforce explicit acknowledgement of risky states."""
         if model_id.startswith(_CUSTOM_PREFIX):
@@ -127,7 +165,16 @@ class ModelRegistry:
                 status="unknown",
             )
         else:
-            model = self.resolve(model_id)
+            model = self.resolve(model_id, fallback_dynamic=allow_unregistered)
+
+        # Handle thinking / reasoning_effort resolution
+        wants_thinking = (
+            thinking is True
+            or (reasoning_effort is not None and reasoning_effort.lower() in {"low", "medium", "high"})
+            or (model_id.endswith("-thinking") and model.thinking_identifier is not None)
+        )
+        if wants_thinking and model.thinking_identifier:
+            model = model.model_copy(update={"identifier": model.thinking_identifier})
 
         if model.status != "available" and not allow_risky_model:
             raise ModelStatusError(model.id, model.status, MODEL_STATUS_DESCRIPTIONS[model.status])

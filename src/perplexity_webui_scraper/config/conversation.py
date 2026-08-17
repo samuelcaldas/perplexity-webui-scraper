@@ -41,6 +41,8 @@ class ConversationConfig(BaseModel):
     """
 
     model: str | None = None
+    reasoning_effort: str | None = None
+    thinking: bool | None = None
     search_focus: SearchFocus = "web"
     source_focus: SourceFocus | list[SourceFocus] = "web"
     time_range: TimeRange = "all"

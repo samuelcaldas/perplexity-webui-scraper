@@ -141,6 +141,8 @@ class Conversation:
         stream: bool = False,
         allow_risky_model: bool | None = None,
         custom_model_mode: ModelMode | None = None,
+        reasoning_effort: str | None = None,
+        thinking: bool | None = None,
     ) -> Conversation:
         """Send a query and return ``self`` for chaining or streaming iteration.
 
@@ -156,6 +158,8 @@ class Conversation:
             allow_risky_model: Per-query acknowledgement for a model whose
                 status is not ``"available"``.
             custom_model_mode: Backend mode for a ``custom:<identifier>`` model.
+            reasoning_effort: Optional reasoning effort (e.g. ``"low"``, ``"medium"``, ``"high"``).
+            thinking: Explicit boolean toggle for thinking mode.
 
         Returns:
             ``self`` to support method chaining or iteration.
@@ -165,6 +169,8 @@ class Conversation:
             model_id,
             allow_risky_model=(self._config.allow_risky_model if allow_risky_model is None else allow_risky_model),
             custom_model_mode=custom_model_mode or self._config.custom_model_mode,
+            reasoning_effort=reasoning_effort or self._config.reasoning_effort,
+            thinking=self._config.thinking if thinking is None else thinking,
         )
         resolved_model = self._validate_request_access(resolved_model, has_files=bool(files))
         self._citation_mode = citation_mode if citation_mode is not None else self._config.citation_mode

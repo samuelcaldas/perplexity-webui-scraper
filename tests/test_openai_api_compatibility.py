@@ -212,3 +212,72 @@ def test_sdk_parses_ordinary_stream_chunks_and_final_finish(openai_client: OpenA
     assert all(chunk.id == chunks[0].id for chunk in chunks)
     provider.create_conversation.assert_called_once()
     conversation.ask.assert_called_once()
+
+
+def test_openai_sdk_models_list_is_deduplicated(openai_client: OpenAI) -> None:
+    """Verify that models list contains no duplicate -thinking entries and only canonical base models."""
+    provider = MagicMock()
+    provider.get_account_profile.return_value = SimpleNamespace(account_tier="pro")
+
+    with patch(
+        "perplexity_webui_scraper.api.auth.client_pool.get_or_create",
+        return_value=provider,
+    ):
+        models = openai_client.models.list()
+
+    model_ids = {model.id for model in models.data}
+    assert "anthropic/claude-sonnet-5" in model_ids
+    assert "anthropic/claude-sonnet-5-thinking" not in model_ids
+    assert "openai/gpt-5.6-terra" in model_ids
+    assert "openai/gpt-5.6-terra-thinking" not in model_ids
+    assert "google/gemini-3.1-pro" in model_ids
+    assert "google/gemini-3.1-pro-thinking-high" not in model_ids
+    assert "x-ai/grok-4.5" in model_ids
+    assert "x-ai/grok-4.5-thinking" not in model_ids
+
+
+@mark.parametrize("reasoning_effort", ["low", "medium", "high"])
+def test_openai_sdk_chat_completion_with_reasoning_effort(
+    openai_client: OpenAI,
+    reasoning_effort: Literal["low", "medium", "high"],
+) -> None:
+    """Validate that OpenAI client passing reasoning_effort routes to thinking identifier."""
+    conversation = _make_conversation("answer with thinking")
+    provider = _make_provider(conversation)
+
+    with patch(
+        "perplexity_webui_scraper.api.routes.completions._client_pool.get_or_create",
+        return_value=provider,
+    ):
+        completion = openai_client.chat.completions.create(
+            model="anthropic/claude-sonnet-5",
+            messages=[{"role": "user", "content": "Solve math problem step by step"}],
+            reasoning_effort=reasoning_effort,
+        )
+
+    assert completion.choices[0].message.content == "answer with thinking"
+    provider.create_conversation.assert_called_once()
+    config = provider.create_conversation.call_args[0][0]
+    assert config.reasoning_effort == reasoning_effort
+    assert config.model == "anthropic/claude-sonnet-5"
+
+
+def test_openai_sdk_legacy_thinking_alias_backward_compat(openai_client: OpenAI) -> None:
+    """Validate that legacy model ID ending with -thinking still resolves correctly."""
+    conversation = _make_conversation("legacy thinking answer")
+    provider = _make_provider(conversation)
+
+    with patch(
+        "perplexity_webui_scraper.api.routes.completions._client_pool.get_or_create",
+        return_value=provider,
+    ):
+        completion = openai_client.chat.completions.create(
+            model="anthropic/claude-sonnet-5-thinking",
+            messages=[{"role": "user", "content": "Hello"}],
+        )
+
+    assert completion.choices[0].message.content == "legacy thinking answer"
+    provider.create_conversation.assert_called_once()
+    config = provider.create_conversation.call_args[0][0]
+    assert config.model == "anthropic/claude-sonnet-5-thinking"
+

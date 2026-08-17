@@ -338,6 +338,7 @@ class PerplexityExtensions(BaseModel):
     response_format: Literal["text", "json_object"] = "text"
     allow_risky_model: bool = False
     custom_model_mode: Literal["copilot", "search", "research"] = "copilot"
+    thinking: bool | None = None
 
     @field_validator("space_uuid", "thread_uuid")
     @classmethod
@@ -416,6 +417,8 @@ class ChatCompletionRequest(BaseModel):
     model: str = Field(min_length=1)
     messages: list[ChatMessage] = Field(min_length=1)
     stream: bool = False
+    reasoning_effort: Literal["low", "medium", "high", "none"] | None = None
+    thinking: bool | None = None
     perplexity: PerplexityExtensions | None = None
     tools: list[FunctionTool] | None = None
     tool_choice: ToolChoice | None = None

@@ -134,13 +134,21 @@ async def _parse_request(raw_request: Request) -> ChatCompletionRequest:
 
 
 def _validate_model(request: ChatCompletionRequest) -> None:
-    """Reject unknown or unacknowledged models before network work."""
+    """Validate model and allow unlisted passthrough models for future-proofing."""
     try:
         ext = request.perplexity
+        is_registered = getattr(MODELS, "is_registered", lambda m: False)(request.model)
+        is_custom_or_dynamic = request.model.startswith("custom:") or not is_registered
+        allow_risky = (
+            ext.allow_risky_model
+            if (ext and ext.allow_risky_model is not None)
+            else is_custom_or_dynamic
+        )
         MODELS.resolve_for_use(
             request.model,
-            allow_risky_model=ext.allow_risky_model if ext else False,
+            allow_risky_model=allow_risky,
             custom_model_mode=ext.custom_model_mode if ext else "copilot",
+            allow_unregistered=True,
         )
     except ValueError as exc:
         if request.model.startswith("custom:"):
@@ -174,7 +182,12 @@ async def _prepare_conversation(
         return _continuation_query(request, cached)
 
     query, files = build_query_and_files(request)
-    config = build_conversation_config(request.model, request.perplexity)
+    config = build_conversation_config(
+        request.model,
+        request.perplexity,
+        reasoning_effort=request.reasoning_effort,
+        thinking=request.thinking,
+    )
     conversation = await to_thread.run_sync(client.create_conversation, config)
     return conversation, query, files
 
@@ -220,7 +233,12 @@ def _contains_tool_history(request: ChatCompletionRequest) -> bool:
 
 def _config_fingerprint(request: ChatCompletionRequest) -> str:
     """Serialize effective conversation config for truthful thread reuse."""
-    config = build_conversation_config(request.model, request.perplexity)
+    config = build_conversation_config(
+        request.model,
+        request.perplexity,
+        reasoning_effort=request.reasoning_effort,
+        thinking=request.thinking,
+    )
     return json.dumps(config.model_dump(mode="json"), separators=(",", ":"), sort_keys=True)
 
 

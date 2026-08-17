@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 from perplexity_webui_scraper.api.tool_calling import build_tool_instruction
 from perplexity_webui_scraper.config.conversation import ConversationConfig
 from perplexity_webui_scraper.core.response import Coordinates
+from perplexity_webui_scraper.models.registry import MODELS
 
 
 if TYPE_CHECKING:
@@ -89,10 +90,26 @@ def build_tool_result_follow_up(request: ChatCompletionRequest) -> str | None:
 def build_conversation_config(
     model: str,
     ext: PerplexityExtensions | None,
+    reasoning_effort: str | None = None,
+    thinking: bool | None = None,
 ) -> ConversationConfig:
     """Build a :class:`ConversationConfig` from a model ID and Perplexity extensions."""
+    is_registered = getattr(MODELS, "is_registered", lambda m: False)(model)
+    is_custom_or_dynamic = model.startswith("custom:") or not is_registered
+    allow_risky = (
+        ext.allow_risky_model
+        if (ext and ext.allow_risky_model is not None)
+        else is_custom_or_dynamic
+    )
+    effective_thinking = ext.thinking if (ext and ext.thinking is not None) else thinking
+
     if ext is None:
-        return ConversationConfig(model=model)
+        return ConversationConfig(
+            model=model,
+            allow_risky_model=allow_risky,
+            reasoning_effort=reasoning_effort,
+            thinking=effective_thinking,
+        )
 
     coordinates: Coordinates | None = None
 
@@ -104,6 +121,8 @@ def build_conversation_config(
 
     return ConversationConfig(
         model=model,
+        reasoning_effort=reasoning_effort,
+        thinking=effective_thinking,
         citation_mode=ext.citation_mode or "clean",
         search_focus=ext.search_focus or "web",
         source_focus=ext.source_focus or "web",
@@ -113,7 +132,7 @@ def build_conversation_config(
         timezone=ext.timezone,
         coordinates=coordinates,
         space_uuid=ext.space_uuid,
-        allow_risky_model=ext.allow_risky_model,
+        allow_risky_model=allow_risky,
         custom_model_mode=ext.custom_model_mode,
     )
 

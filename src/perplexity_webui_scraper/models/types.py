@@ -55,6 +55,9 @@ class Model(BaseModel):
     description: str
     identifier: str
     identifier_by_tier: dict[ModelTier, str] = Field(default_factory=dict)
+    thinking_identifier: str | None = None
+    supports_thinking: bool = False
+    aliases: list[str] = Field(default_factory=list)
     tool_name: str
     provider: str
     min_tier: ModelTier | None

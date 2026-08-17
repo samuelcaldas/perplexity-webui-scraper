@@ -114,3 +114,18 @@ def test_custom_model_is_explicit_and_validated() -> None:
         MODELS.resolve_for_use("custom:", allow_risky_model=True)
     with raises(ValueError, match="Unknown model"):
         MODELS.resolve_for_use("gpt57", allow_risky_model=True)
+
+
+def test_dynamic_unregistered_model_fallback() -> None:
+    with raises(ModelStatusError):
+        MODELS.resolve_for_use("openai/gpt-6.0", allow_unregistered=True)
+    with warns(ModelRiskWarning):
+        model = MODELS.resolve_for_use(
+            "openai/gpt-6.0",
+            allow_risky_model=True,
+            allow_unregistered=True,
+        )
+    assert model.id == "openai/gpt-6.0"
+    assert model.identifier == "gpt-6.0"
+    assert model.provider == "openai"
+    assert model.status == "unknown"

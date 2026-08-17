@@ -51,8 +51,13 @@
   {
     "id": "openai/gpt-5.6-terra",
     "name": "GPT-5.6 Terra",
-    "description": "OpenAI's versatile model",
+    "description": "OpenAI's versatile model with thinking support",
     "identifier": "gpt56_terra",
+    "thinking_identifier": "gpt56_terra_thinking",
+    "supports_thinking": true,
+    "aliases": [
+      "openai/gpt-5.6-terra-thinking"
+    ],
     "tool_name": "pplx_gpt56_terra",
     "min_tier": "pro",
     "mode": "copilot",
@@ -62,23 +67,15 @@
     "is_official": true
   },
   {
-    "id": "openai/gpt-5.6-terra-thinking",
-    "name": "GPT-5.6 Terra Thinking",
-    "description": "OpenAI's versatile model with thinking",
-    "identifier": "gpt56_terra_thinking",
-    "tool_name": "pplx_gpt56_terra_thinking",
-    "min_tier": "pro",
-    "mode": "copilot",
-    "provider": "openai",
-    "status": "available",
-    "last_tested_at": "2026-08-05T23:31:43.633312Z",
-    "is_official": true
-  },
-  {
     "id": "openai/gpt-5.6-sol",
     "name": "GPT-5.6 Sol",
-    "description": "OpenAI's most powerful model",
+    "description": "OpenAI's most powerful model with thinking support",
     "identifier": "gpt56_sol",
+    "thinking_identifier": "gpt56_sol_thinking",
+    "supports_thinking": true,
+    "aliases": [
+      "openai/gpt-5.6-sol-thinking"
+    ],
     "tool_name": "pplx_gpt56_sol",
     "min_tier": "max",
     "mode": "copilot",
@@ -88,23 +85,15 @@
     "is_official": true
   },
   {
-    "id": "openai/gpt-5.6-sol-thinking",
-    "name": "GPT-5.6 Sol Thinking",
-    "description": "OpenAI's most powerful model with thinking",
-    "identifier": "gpt56_sol_thinking",
-    "tool_name": "pplx_gpt56_sol_thinking",
-    "min_tier": "max",
-    "mode": "copilot",
-    "provider": "openai",
-    "status": "available",
-    "last_tested_at": "2026-08-05T23:31:54.067766Z",
-    "is_official": true
-  },
-  {
     "id": "anthropic/claude-sonnet-5",
     "name": "Claude Sonnet 5",
-    "description": "Anthropic's fast model",
+    "description": "Anthropic's fast model with thinking support",
     "identifier": "claude50sonnet",
+    "thinking_identifier": "claude50sonnetthinking",
+    "supports_thinking": true,
+    "aliases": [
+      "anthropic/claude-sonnet-5-thinking"
+    ],
     "tool_name": "pplx_claude_s50",
     "min_tier": "pro",
     "mode": "copilot",
@@ -114,23 +103,11 @@
     "is_official": true
   },
   {
-    "id": "anthropic/claude-sonnet-5-thinking",
-    "name": "Claude Sonnet 5 Thinking",
-    "description": "Anthropic's newest reasoning model",
-    "identifier": "claude50sonnetthinking",
-    "tool_name": "pplx_claude_s50_think",
-    "min_tier": "pro",
-    "mode": "copilot",
-    "provider": "anthropic",
-    "status": "available",
-    "last_tested_at": "2026-08-05T23:32:01.771184Z",
-    "is_official": true
-  },
-  {
     "id": "z-ai/glm-5.2",
     "name": "GLM-5.2 Thinking",
     "description": "Z.ai's advanced model",
     "identifier": "glm_5_2",
+    "supports_thinking": true,
     "tool_name": "pplx_glm52",
     "min_tier": "pro",
     "mode": "copilot",
@@ -140,11 +117,17 @@
     "is_official": true
   },
   {
-    "id": "google/gemini-3.1-pro-thinking-high",
-    "name": "Gemini 3.1 Pro Thinking",
-    "description": "Google's latest model with thinking",
-    "identifier": "gemini31pro_high",
-    "tool_name": "pplx_gemini31_pro_think_high",
+    "id": "google/gemini-3.1-pro",
+    "name": "Gemini 3.1 Pro",
+    "description": "Google's latest model with thinking support",
+    "identifier": "gemini31pro_low",
+    "thinking_identifier": "gemini31pro_high",
+    "supports_thinking": true,
+    "aliases": [
+      "google/gemini-3.1-pro-thinking-high",
+      "google/gemini-3.1-pro-thinking-low"
+    ],
+    "tool_name": "pplx_gemini31_pro",
     "min_tier": "pro",
     "mode": "copilot",
     "provider": "google",
@@ -153,11 +136,15 @@
     "is_official": true
   },
   {
-    "id": "moonshot/kimi-k3-thinking",
+    "id": "moonshot/kimi-k3",
     "name": "Kimi K3 Thinking",
     "description": "Moonshot AI's latest reasoning model",
     "identifier": "kimik3thinking",
-    "tool_name": "pplx_kimi_k3_thinking",
+    "supports_thinking": true,
+    "aliases": [
+      "moonshot/kimi-k3-thinking"
+    ],
+    "tool_name": "pplx_kimi_k3",
     "min_tier": "pro",
     "mode": "copilot",
     "provider": "moonshot",
@@ -168,8 +155,13 @@
   {
     "id": "x-ai/grok-4.5",
     "name": "Grok 4.5",
-    "description": "xAI's most advanced model",
+    "description": "xAI's most advanced model with thinking support",
     "identifier": "grok45low",
+    "thinking_identifier": "grok45medium",
+    "supports_thinking": true,
+    "aliases": [
+      "x-ai/grok-4.5-thinking"
+    ],
     "tool_name": "pplx_grok45",
     "provider": "x-ai",
     "min_tier": "pro",
@@ -179,24 +171,15 @@
     "is_official": true
   },
   {
-    "id": "x-ai/grok-4.5-thinking",
-    "name": "Grok 4.5 Thinking",
-    "description": "xAI's most advanced model",
-    "identifier": "grok45medium",
-    "tool_name": "pplx_grok45_think",
-    "provider": "x-ai",
-    "min_tier": "pro",
-    "mode": "copilot",
-    "status": "available",
-    "last_tested_at": "2026-08-05T23:32:21.682832Z",
-    "is_official": true
-  },
-  {
-    "id": "nvidia/nemotron-3-ultra-thinking",
+    "id": "nvidia/nemotron-3-ultra",
     "name": "Nemotron 3 Ultra",
     "description": "NVIDIA's Nemotron 3 Ultra 550B model",
     "identifier": "nv_nemotron_3_ultra",
-    "tool_name": "pplx_nemotron3_ultra_think",
+    "supports_thinking": true,
+    "aliases": [
+      "nvidia/nemotron-3-ultra-thinking"
+    ],
+    "tool_name": "pplx_nemotron3_ultra",
     "min_tier": "pro",
     "mode": "copilot",
     "provider": "nvidia",
@@ -207,8 +190,13 @@
   {
     "id": "anthropic/claude-opus-5",
     "name": "Claude Opus 5",
-    "description": "Anthropic's most advanced model",
+    "description": "Anthropic's most advanced model with thinking support",
     "identifier": "claude50opus",
+    "thinking_identifier": "claude50opusthinking",
+    "supports_thinking": true,
+    "aliases": [
+      "anthropic/claude-opus-5-thinking"
+    ],
     "tool_name": "pplx_claude_o50",
     "min_tier": "max",
     "mode": "copilot",
@@ -218,23 +206,15 @@
     "is_official": true
   },
   {
-    "id": "anthropic/claude-opus-5-thinking",
-    "name": "Claude Opus 5 Thinking",
-    "description": "Anthropic's most advanced model with thinking",
-    "identifier": "claude50opusthinking",
-    "tool_name": "pplx_claude_o50_think",
-    "min_tier": "max",
-    "mode": "copilot",
-    "provider": "anthropic",
-    "status": "available",
-    "last_tested_at": "2026-08-05T23:32:35.570998Z",
-    "is_official": true
-  },
-  {
     "id": "anthropic/claude-opus-4.8",
     "name": "Claude Opus 4.8",
-    "description": "Anthropic's most advanced model",
+    "description": "Anthropic's most advanced model with thinking support",
     "identifier": "claude48opus",
+    "thinking_identifier": "claude48opusthinking",
+    "supports_thinking": true,
+    "aliases": [
+      "anthropic/claude-opus-4.8-thinking"
+    ],
     "tool_name": "pplx_claude_o48",
     "min_tier": "max",
     "mode": "copilot",
@@ -244,37 +224,17 @@
     "is_official": false
   },
   {
-    "id": "anthropic/claude-opus-4.8-thinking",
-    "name": "Claude Opus 4.8 Thinking",
-    "description": "Anthropic's most advanced model with thinking",
-    "identifier": "claude48opusthinking",
-    "tool_name": "pplx_claude_o48_think",
-    "min_tier": "max",
-    "mode": "copilot",
-    "provider": "anthropic",
-    "status": "available",
-    "last_tested_at": "2026-08-05T23:32:43.944074Z",
-    "is_official": false
-  },
-  {
-    "id": "google/gemini-3.1-pro-thinking-low",
-    "name": "Gemini 3.1 Pro",
-    "description": "Google's latest model",
-    "identifier": "gemini31pro_low",
-    "tool_name": "pplx_gemini31_pro_think_low",
-    "min_tier": "pro",
-    "mode": "copilot",
-    "provider": "google",
-    "status": "available",
-    "last_tested_at": "2026-08-05T23:32:46.838191Z",
-    "is_official": false
-  },
-  {
-    "id": "moonshot/kimi-k2.6-instant",
+    "id": "moonshot/kimi-k2.6",
     "name": "Kimi K2.6",
-    "description": "Moonshot AI's latest model",
+    "description": "Moonshot AI's latest model with thinking support",
     "identifier": "kimik26instant",
-    "tool_name": "pplx_kimi_k26_instant",
+    "thinking_identifier": "kimik26thinking",
+    "supports_thinking": true,
+    "aliases": [
+      "moonshot/kimi-k2.6-instant",
+      "moonshot/kimi-k2.6-thinking"
+    ],
+    "tool_name": "pplx_kimi_k26",
     "min_tier": "pro",
     "mode": "copilot",
     "provider": "moonshot",
@@ -283,24 +243,15 @@
     "is_official": false
   },
   {
-    "id": "moonshot/kimi-k2.6-thinking",
-    "name": "Kimi K2.6 Thinking",
-    "description": "Moonshot AI's latest model with Thinking",
-    "identifier": "kimik26thinking",
-    "tool_name": "pplx_kimi_k26_thinking",
-    "min_tier": "pro",
-    "mode": "copilot",
-    "provider": "moonshot",
-    "status": "available",
-    "last_tested_at": "2026-08-05T23:32:52.594354Z",
-    "is_official": false
-  },
-  {
-    "id": "nvidia/nemotron-3-super-thinking",
+    "id": "nvidia/nemotron-3-super",
     "name": "Nemotron 3 Super",
     "description": "NVIDIA's Nemotron 3 Super 120B model",
     "identifier": "nv_nemotron_3_super",
-    "tool_name": "pplx_nemotron3_super_think",
+    "supports_thinking": true,
+    "aliases": [
+      "nvidia/nemotron-3-super-thinking"
+    ],
+    "tool_name": "pplx_nemotron3_super",
     "min_tier": "pro",
     "mode": "copilot",
     "provider": "nvidia",
@@ -317,8 +268,8 @@
     "min_tier": "pro",
     "mode": "copilot",
     "provider": "openai",
-    "status": "available",
-    "last_tested_at": "2026-08-05T23:32:57.888766Z",
+    "status": "unavailable",
+    "last_tested_at": "2026-08-16T00:00:00Z",
     "is_official": false
   },
   {
@@ -330,8 +281,8 @@
     "min_tier": "pro",
     "mode": "copilot",
     "provider": "openai",
-    "status": "available",
-    "last_tested_at": "2026-08-05T23:33:08.325486Z",
+    "status": "unavailable",
+    "last_tested_at": "2026-08-16T00:00:00Z",
     "is_official": false
   },
   {
@@ -343,8 +294,8 @@
     "min_tier": "max",
     "mode": "copilot",
     "provider": "openai",
-    "status": "available",
-    "last_tested_at": "2026-08-05T23:33:11.939198Z",
+    "status": "unavailable",
+    "last_tested_at": "2026-08-16T00:00:00Z",
     "is_official": false
   },
   {
@@ -356,8 +307,8 @@
     "min_tier": "max",
     "mode": "copilot",
     "provider": "anthropic",
-    "status": "available",
-    "last_tested_at": "2026-08-05T23:33:17.004817Z",
+    "status": "unavailable",
+    "last_tested_at": "2026-08-16T00:00:00Z",
     "is_official": false
   },
   {
@@ -369,8 +320,8 @@
     "min_tier": "max",
     "mode": "copilot",
     "provider": "anthropic",
-    "status": "available",
-    "last_tested_at": "2026-08-05T23:33:21.643555Z",
+    "status": "unavailable",
+    "last_tested_at": "2026-08-16T00:00:00Z",
     "is_official": false
   },
   {
@@ -382,8 +333,8 @@
     "min_tier": "pro",
     "mode": "copilot",
     "provider": "anthropic",
-    "status": "available",
-    "last_tested_at": "2026-08-05T23:33:24.724002Z",
+    "status": "unavailable",
+    "last_tested_at": "2026-08-16T00:00:00Z",
     "is_official": false
   },
   {
@@ -395,8 +346,8 @@
     "min_tier": "pro",
     "mode": "copilot",
     "provider": "anthropic",
-    "status": "available",
-    "last_tested_at": "2026-08-05T23:33:27.861669Z",
+    "status": "unavailable",
+    "last_tested_at": "2026-08-16T00:00:00Z",
     "is_official": false
   },
   {
@@ -408,8 +359,8 @@
     "provider": "openai",
     "min_tier": null,
     "mode": "copilot",
-    "status": "available",
-    "last_tested_at": "2026-08-05T23:33:31.502542Z",
+    "status": "unavailable",
+    "last_tested_at": "2026-08-16T00:00:00Z",
     "is_official": false
   },
   {
@@ -421,8 +372,8 @@
     "provider": "openai",
     "min_tier": null,
     "mode": "copilot",
-    "status": "available",
-    "last_tested_at": "2026-08-05T23:33:34.451036Z",
+    "status": "unavailable",
+    "last_tested_at": "2026-08-16T00:00:00Z",
     "is_official": false
   },
   {
@@ -434,8 +385,8 @@
     "provider": "openai",
     "min_tier": null,
     "mode": "copilot",
-    "status": "available",
-    "last_tested_at": "2026-08-05T23:33:37.081277Z",
+    "status": "unavailable",
+    "last_tested_at": "2026-08-16T00:00:00Z",
     "is_official": false
   },
   {
@@ -447,8 +398,8 @@
     "provider": "openai",
     "min_tier": null,
     "mode": "copilot",
-    "status": "available",
-    "last_tested_at": "2026-08-05T23:33:40.097475Z",
+    "status": "unavailable",
+    "last_tested_at": "2026-08-16T00:00:00Z",
     "is_official": false
   },
   {
@@ -460,8 +411,8 @@
     "provider": "openai",
     "min_tier": null,
     "mode": "copilot",
-    "status": "available",
-    "last_tested_at": "2026-08-05T23:33:43.180232Z",
+    "status": "unavailable",
+    "last_tested_at": "2026-08-16T00:00:00Z",
     "is_official": false
   },
   {
@@ -473,8 +424,8 @@
     "provider": "openai",
     "min_tier": null,
     "mode": "copilot",
-    "status": "available",
-    "last_tested_at": "2026-08-05T23:33:45.785394Z",
+    "status": "unavailable",
+    "last_tested_at": "2026-08-16T00:00:00Z",
     "is_official": false
   },
   {
@@ -486,8 +437,8 @@
     "provider": "openai",
     "min_tier": null,
     "mode": "copilot",
-    "status": "available",
-    "last_tested_at": "2026-08-05T23:33:48.638838Z",
+    "status": "unavailable",
+    "last_tested_at": "2026-08-16T00:00:00Z",
     "is_official": false
   },
   {
@@ -499,8 +450,8 @@
     "provider": "openai",
     "min_tier": null,
     "mode": "copilot",
-    "status": "available",
-    "last_tested_at": "2026-08-05T23:33:53.467647Z",
+    "status": "unavailable",
+    "last_tested_at": "2026-08-16T00:00:00Z",
     "is_official": false
   },
   {
@@ -512,8 +463,8 @@
     "provider": "openai",
     "min_tier": null,
     "mode": "copilot",
-    "status": "available",
-    "last_tested_at": "2026-08-05T23:33:56.805390Z",
+    "status": "unavailable",
+    "last_tested_at": "2026-08-16T00:00:00Z",
     "is_official": false
   },
   {
@@ -525,8 +476,8 @@
     "provider": "openai",
     "min_tier": null,
     "mode": "copilot",
-    "status": "available",
-    "last_tested_at": "2026-08-05T23:34:01.165691Z",
+    "status": "unavailable",
+    "last_tested_at": "2026-08-16T00:00:00Z",
     "is_official": false
   },
   {
@@ -538,8 +489,8 @@
     "provider": "openai",
     "min_tier": null,
     "mode": "copilot",
-    "status": "available",
-    "last_tested_at": "2026-08-05T23:34:04.095823Z",
+    "status": "unavailable",
+    "last_tested_at": "2026-08-16T00:00:00Z",
     "is_official": false
   },
   {
@@ -551,8 +502,8 @@
     "provider": "openai",
     "min_tier": null,
     "mode": "copilot",
-    "status": "available",
-    "last_tested_at": "2026-08-05T23:34:07.087989Z",
+    "status": "unavailable",
+    "last_tested_at": "2026-08-16T00:00:00Z",
     "is_official": false
   },
   {
@@ -564,8 +515,8 @@
     "provider": "openai",
     "min_tier": null,
     "mode": "copilot",
-    "status": "available",
-    "last_tested_at": "2026-08-05T23:34:11.454227Z",
+    "status": "unavailable",
+    "last_tested_at": "2026-08-16T00:00:00Z",
     "is_official": false
   },
   {
@@ -577,8 +528,8 @@
     "provider": "openai",
     "min_tier": null,
     "mode": "copilot",
-    "status": "available",
-    "last_tested_at": "2026-08-05T23:34:15.837430Z",
+    "status": "unavailable",
+    "last_tested_at": "2026-08-16T00:00:00Z",
     "is_official": false
   },
   {
@@ -590,8 +541,8 @@
     "provider": "anthropic",
     "min_tier": null,
     "mode": "copilot",
-    "status": "available",
-    "last_tested_at": "2026-08-05T23:34:18.806306Z",
+    "status": "unavailable",
+    "last_tested_at": "2026-08-16T00:00:00Z",
     "is_official": false
   },
   {
@@ -603,8 +554,8 @@
     "provider": "anthropic",
     "min_tier": null,
     "mode": "copilot",
-    "status": "available",
-    "last_tested_at": "2026-08-05T23:34:22.075182Z",
+    "status": "unavailable",
+    "last_tested_at": "2026-08-16T00:00:00Z",
     "is_official": false
   },
   {
@@ -616,8 +567,8 @@
     "provider": "anthropic",
     "min_tier": null,
     "mode": "copilot",
-    "status": "available",
-    "last_tested_at": "2026-08-05T23:34:26.521079Z",
+    "status": "unavailable",
+    "last_tested_at": "2026-08-16T00:00:00Z",
     "is_official": false
   },
   {
@@ -629,8 +580,8 @@
     "provider": "google",
     "min_tier": null,
     "mode": "copilot",
-    "status": "available",
-    "last_tested_at": "2026-08-05T23:38:44.044228Z",
+    "status": "unavailable",
+    "last_tested_at": "2026-08-16T00:00:00Z",
     "is_official": false
   },
   {
@@ -642,8 +593,8 @@
     "provider": "google",
     "min_tier": null,
     "mode": "copilot",
-    "status": "available",
-    "last_tested_at": "2026-08-05T23:38:47.111485Z",
+    "status": "unavailable",
+    "last_tested_at": "2026-08-16T00:00:00Z",
     "is_official": false
   },
   {
@@ -655,8 +606,8 @@
     "provider": "google",
     "min_tier": null,
     "mode": "copilot",
-    "status": "available",
-    "last_tested_at": "2026-08-05T23:38:50.036192Z",
+    "status": "unavailable",
+    "last_tested_at": "2026-08-16T00:00:00Z",
     "is_official": false
   },
   {
@@ -668,8 +619,8 @@
     "provider": "google",
     "min_tier": null,
     "mode": "copilot",
-    "status": "available",
-    "last_tested_at": "2026-08-05T23:38:55.887205Z",
+    "status": "unavailable",
+    "last_tested_at": "2026-08-16T00:00:00Z",
     "is_official": false
   },
   {
@@ -681,8 +632,8 @@
     "provider": "google",
     "min_tier": null,
     "mode": "copilot",
-    "status": "available",
-    "last_tested_at": "2026-08-05T23:38:59.146680Z",
+    "status": "unavailable",
+    "last_tested_at": "2026-08-16T00:00:00Z",
     "is_official": false
   },
   {
@@ -694,8 +645,8 @@
     "provider": "google",
     "min_tier": null,
     "mode": "copilot",
-    "status": "available",
-    "last_tested_at": "2026-08-05T23:39:02.043511Z",
+    "status": "unavailable",
+    "last_tested_at": "2026-08-16T00:00:00Z",
     "is_official": false
   },
   {
@@ -707,8 +658,8 @@
     "provider": "google",
     "min_tier": null,
     "mode": "copilot",
-    "status": "available",
-    "last_tested_at": "2026-08-05T23:39:05.934013Z",
+    "status": "unavailable",
+    "last_tested_at": "2026-08-16T00:00:00Z",
     "is_official": false
   },
   {
@@ -720,8 +671,8 @@
     "provider": "x-ai",
     "min_tier": null,
     "mode": "copilot",
-    "status": "available",
-    "last_tested_at": "2026-08-05T23:39:08.797817Z",
+    "status": "unavailable",
+    "last_tested_at": "2026-08-16T00:00:00Z",
     "is_official": false
   },
   {
@@ -733,8 +684,8 @@
     "provider": "anthropic",
     "min_tier": null,
     "mode": "copilot",
-    "status": "available",
-    "last_tested_at": "2026-08-05T23:39:11.760884Z",
+    "status": "unavailable",
+    "last_tested_at": "2026-08-16T00:00:00Z",
     "is_official": false
   },
   {
@@ -746,8 +697,8 @@
     "provider": "anthropic",
     "min_tier": null,
     "mode": "copilot",
-    "status": "available",
-    "last_tested_at": "2026-08-05T23:39:15.658726Z",
+    "status": "unavailable",
+    "last_tested_at": "2026-08-16T00:00:00Z",
     "is_official": false
   },
   {
@@ -759,8 +710,8 @@
     "provider": "anthropic",
     "min_tier": null,
     "mode": "copilot",
-    "status": "available",
-    "last_tested_at": "2026-08-05T23:39:20.431045Z",
+    "status": "unavailable",
+    "last_tested_at": "2026-08-16T00:00:00Z",
     "is_official": false
   },
   {
@@ -772,8 +723,8 @@
     "provider": "anthropic",
     "min_tier": null,
     "mode": "copilot",
-    "status": "available",
-    "last_tested_at": "2026-08-05T23:39:24.984906Z",
+    "status": "unavailable",
+    "last_tested_at": "2026-08-16T00:00:00Z",
     "is_official": false
   },
   {
@@ -785,8 +736,8 @@
     "provider": "anthropic",
     "min_tier": null,
     "mode": "copilot",
-    "status": "available",
-    "last_tested_at": "2026-08-05T23:39:29.543839Z",
+    "status": "unavailable",
+    "last_tested_at": "2026-08-16T00:00:00Z",
     "is_official": false
   },
   {
@@ -798,8 +749,8 @@
     "provider": "anthropic",
     "min_tier": null,
     "mode": "copilot",
-    "status": "available",
-    "last_tested_at": "2026-08-05T23:39:33.615918Z",
+    "status": "unavailable",
+    "last_tested_at": "2026-08-16T00:00:00Z",
     "is_official": false
   },
   {
@@ -811,8 +762,8 @@
     "provider": "anthropic",
     "min_tier": null,
     "mode": "copilot",
-    "status": "available",
-    "last_tested_at": "2026-08-05T23:39:41.127287Z",
+    "status": "unavailable",
+    "last_tested_at": "2026-08-16T00:00:00Z",
     "is_official": false
   },
   {
@@ -824,8 +775,8 @@
     "provider": "anthropic",
     "min_tier": null,
     "mode": "copilot",
-    "status": "available",
-    "last_tested_at": "2026-08-05T23:39:46.076227Z",
+    "status": "unavailable",
+    "last_tested_at": "2026-08-16T00:00:00Z",
     "is_official": false
   },
   {
@@ -837,8 +788,8 @@
     "provider": "anthropic",
     "min_tier": null,
     "mode": "copilot",
-    "status": "available",
-    "last_tested_at": "2026-08-05T23:39:49.423367Z",
+    "status": "unavailable",
+    "last_tested_at": "2026-08-16T00:00:00Z",
     "is_official": false
   },
   {
@@ -850,8 +801,8 @@
     "provider": "anthropic",
     "min_tier": null,
     "mode": "copilot",
-    "status": "available",
-    "last_tested_at": "2026-08-05T23:39:52.219963Z",
+    "status": "unavailable",
+    "last_tested_at": "2026-08-16T00:00:00Z",
     "is_official": false
   },
   {
@@ -864,7 +815,7 @@
     "min_tier": null,
     "mode": "copilot",
     "status": "unavailable",
-    "last_tested_at": "2026-08-05T23:39:58.315774Z",
+    "last_tested_at": "2026-08-16T00:00:00Z",
     "is_official": false
   },
   {
@@ -877,7 +828,7 @@
     "min_tier": null,
     "mode": "copilot",
     "status": "unavailable",
-    "last_tested_at": "2026-08-05T23:40:05.034769Z",
+    "last_tested_at": "2026-08-16T00:00:00Z",
     "is_official": false
   },
   {
@@ -889,8 +840,8 @@
     "provider": "moonshot",
     "min_tier": null,
     "mode": "copilot",
-    "status": "available",
-    "last_tested_at": "2026-08-05T23:40:08.660424Z",
+    "status": "unavailable",
+    "last_tested_at": "2026-08-16T00:00:00Z",
     "is_official": false
   },
   {
@@ -902,8 +853,8 @@
     "provider": "moonshot",
     "min_tier": null,
     "mode": "copilot",
-    "status": "available",
-    "last_tested_at": "2026-08-05T23:40:11.576027Z",
+    "status": "unavailable",
+    "last_tested_at": "2026-08-16T00:00:00Z",
     "is_official": false
   },
   {
@@ -915,8 +866,8 @@
     "provider": "x-ai",
     "min_tier": null,
     "mode": "copilot",
-    "status": "available",
-    "last_tested_at": "2026-08-05T23:40:14.422712Z",
+    "status": "unavailable",
+    "last_tested_at": "2026-08-16T00:00:00Z",
     "is_official": false
   },
   {
@@ -928,8 +879,8 @@
     "provider": "x-ai",
     "min_tier": null,
     "mode": "copilot",
-    "status": "available",
-    "last_tested_at": "2026-08-05T23:40:17.401221Z",
+    "status": "unavailable",
+    "last_tested_at": "2026-08-16T00:00:00Z",
     "is_official": false
   },
   {
@@ -941,8 +892,8 @@
     "provider": "x-ai",
     "min_tier": null,
     "mode": "copilot",
-    "status": "available",
-    "last_tested_at": "2026-08-05T23:35:53.563433Z",
+    "status": "unavailable",
+    "last_tested_at": "2026-08-16T00:00:00Z",
     "is_official": false
   },
   {
@@ -954,8 +905,8 @@
     "provider": "x-ai",
     "min_tier": null,
     "mode": "copilot",
-    "status": "available",
-    "last_tested_at": "2026-08-05T23:35:56.433394Z",
+    "status": "unavailable",
+    "last_tested_at": "2026-08-16T00:00:00Z",
     "is_official": false
   },
   {
@@ -967,8 +918,8 @@
     "provider": "openai",
     "min_tier": null,
     "mode": "research",
-    "status": "available",
-    "last_tested_at": "2026-08-05T23:35:59.335468Z",
+    "status": "unavailable",
+    "last_tested_at": "2026-08-16T00:00:00Z",
     "is_official": false
   },
   {
@@ -980,8 +931,8 @@
     "provider": "openai",
     "min_tier": null,
     "mode": "copilot",
-    "status": "available",
-    "last_tested_at": "2026-08-05T23:36:02.896320Z",
+    "status": "unavailable",
+    "last_tested_at": "2026-08-16T00:00:00Z",
     "is_official": false
   }
 ]
