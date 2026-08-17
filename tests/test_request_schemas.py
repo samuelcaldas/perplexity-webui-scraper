@@ -430,15 +430,16 @@ def test_model_validate_rejects_duplicate_tool_result_ids() -> None:
         ChatCompletionRequest.model_validate(_request(messages))
 
 
-def test_model_validate_rejects_streaming_tool_requests() -> None:
-    with pytest.raises(ValidationError, match="stream"):
-        ChatCompletionRequest.model_validate(
-            _request(
-                [{"role": "user", "content": "Call weather."}],
-                stream=True,
-                tools=[FUNCTION_TOOL],
-            )
+def test_model_validate_accepts_streaming_tool_requests() -> None:
+    req = ChatCompletionRequest.model_validate(
+        _request(
+            [{"role": "user", "content": "Call weather."}],
+            stream=True,
+            tools=[FUNCTION_TOOL],
         )
+    )
+    assert req.stream is True
+    assert req.tools is not None
 
 
 @pytest.mark.parametrize("tool_choice", ["required", {"type": "function", "function": {"name": "get_weather"}}])

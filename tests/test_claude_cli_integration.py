@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 from unittest.mock import MagicMock, patch
 
@@ -143,6 +144,7 @@ def test_claude_coding_tool_read_file_emulation(openai_client: OpenAI) -> None:
     assert len(choice.message.tool_calls) == 1
 
     tool_call = choice.message.tool_calls[0]
+    assert tool_call.type == "function"
     assert tool_call.function.name == "Read"
     assert '"file_path":"/home/user/main.py"' in tool_call.function.arguments
 
@@ -169,6 +171,7 @@ def test_claude_coding_tool_bash_execution_emulation(openai_client: OpenAI) -> N
     assert choice.finish_reason == "tool_calls"
     assert choice.message.tool_calls is not None
     tool_call = choice.message.tool_calls[0]
+    assert tool_call.type == "function"
     assert tool_call.function.name == "Bash"
     assert '"command":"pytest tests/"' in tool_call.function.arguments
 
@@ -291,7 +294,150 @@ def test_claude_coding_tool_with_reasoning_effort_high(openai_client: OpenAI) ->
     assert choice.finish_reason == "tool_calls"
     assert choice.message.tool_calls is not None
     tool_call = choice.message.tool_calls[0]
+    assert tool_call.type == "function"
     assert tool_call.function.name == "Write"
     assert '"file_path":"solution.py"' in tool_call.function.arguments
     config = provider.create_conversation.call_args[0][0]
     assert config.reasoning_effort == "high"
+
+
+def test_claude_cli_streaming_tool_call_dispatch(openai_client: OpenAI) -> None:
+    """Verify Claude CLI streaming request with tools emits tool_calls chunks and finish_reason."""
+    tool_answer = _tool_call_answer("Read", {"file_path": "/app/src/main.py"})
+    conversation = _make_conversation(tool_answer)
+    conversation.__iter__ = MagicMock(return_value=iter([SimpleNamespace(last_chunk=tool_answer, answer=tool_answer)]))
+    provider = _make_provider(conversation)
+
+    model = os.environ["ANTHROPIC_DEFAULT_FABLE_MODEL"]
+
+    with patch(
+        "perplexity_webui_scraper.api.routes.completions._client_pool.get_or_create",
+        return_value=provider,
+    ):
+        stream = openai_client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": "Read /app/src/main.py"}],
+            tools=CLAUDE_CODING_TOOLS,
+            stream=True,
+        )
+        chunks = list(stream)
+
+    assert len(chunks) >= 2
+    # Find chunk containing tool_calls
+    tool_chunks = [c for c in chunks if c.choices and c.choices[0].delta.tool_calls]
+    assert len(tool_chunks) == 1
+    assert tool_chunks[0].choices[0].delta.tool_calls is not None
+    tool_call_delta = tool_chunks[0].choices[0].delta.tool_calls[0]
+    assert tool_call_delta.function is not None
+    assert tool_call_delta.function.name == "Read"
+    assert '"file_path":"/app/src/main.py"' in (tool_call_delta.function.arguments or "")
+
+    # Final chunk has finish_reason="tool_calls"
+    finish_chunk = chunks[-1]
+    assert finish_chunk.choices[0].finish_reason == "tool_calls"
+
+
+def test_claude_cli_streaming_multi_turn_continuation(openai_client: OpenAI) -> None:
+    """Verify multi-turn tool response continuation works in streaming mode."""
+    # Step 1: Initial tool call
+    tool_answer = _tool_call_answer("Bash", {"command": "git status"})
+    conversation = _make_conversation(tool_answer, uuid=THREAD_UUID)
+    conversation.__iter__ = MagicMock(return_value=iter([SimpleNamespace(last_chunk=tool_answer, answer=tool_answer)]))
+    provider = _make_provider(conversation)
+
+    model = os.environ["ANTHROPIC_DEFAULT_SONNET_MODEL"]
+
+    with patch(
+        "perplexity_webui_scraper.api.routes.completions._client_pool.get_or_create",
+        return_value=provider,
+    ):
+        stream1 = openai_client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": "Check git repo status"}],
+            tools=CLAUDE_CODING_TOOLS,
+            stream=True,
+        )
+        chunks1 = list(stream1)
+
+    assert chunks1[1].choices[0].delta.tool_calls is not None
+    tool_call_1 = chunks1[1].choices[0].delta.tool_calls[0]
+    call_id = tool_call_1.id or "tool_call_1"
+
+    # Step 2: Feed back tool result with stream=True
+    follow_up_answer = "Working tree is clean."
+    conversation.answer = follow_up_answer
+    conversation.__iter__ = MagicMock(
+        return_value=iter([SimpleNamespace(last_chunk=follow_up_answer, answer=follow_up_answer)])
+    )
+
+    with patch(
+        "perplexity_webui_scraper.api.routes.completions._client_pool.get_or_create",
+        return_value=provider,
+    ):
+        stream2 = openai_client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "user", "content": "Check git repo status"},
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": call_id,
+                            "type": "function",
+                            "function": {
+                                "name": "Bash",
+                                "arguments": '{"command":"git status"}',
+                            },
+                        }
+                    ],
+                },
+                {
+                    "role": "tool",
+                    "tool_call_id": call_id,
+                    "content": "nothing to commit, working tree clean",
+                },
+            ],
+            tools=CLAUDE_CODING_TOOLS,
+            stream=True,
+            extra_body={"perplexity": {"thread_uuid": THREAD_UUID}},
+        )
+        chunks2 = list(stream2)
+
+    content_chunks = [c.choices[0].delta.content for c in chunks2 if c.choices and c.choices[0].delta.content]
+    assert "".join(filter(None, content_chunks)) == "Working tree is clean."
+    assert chunks2[-1].choices[0].finish_reason == "stop"
+
+
+@mark.parametrize(
+    "model_candidate",
+    [
+        "gpt-5.6-terra",
+        "gpt-5.6-terra[1m]",
+        "claude-sonnet-5",
+        "claude-sonnet-4-6[1m]",
+        "best",
+        "sonar-2",
+        "openai/gpt-5.6-terra",
+        "anthropic/claude-sonnet-5",
+    ],
+)
+def test_claude_cli_unprefixed_and_bracketed_model_resolution(
+    openai_client: OpenAI,
+    model_candidate: str,
+) -> None:
+    """Verify that models with or without prefixes and with bracketed suffixes resolve cleanly."""
+    conversation = _make_conversation(f"Answer from {model_candidate}")
+    provider = _make_provider(conversation)
+
+    with patch(
+        "perplexity_webui_scraper.api.routes.completions._client_pool.get_or_create",
+        return_value=provider,
+    ):
+        response = openai_client.chat.completions.create(
+            model=model_candidate,
+            messages=[{"role": "user", "content": "Hello"}],
+        )
+
+    assert response.choices[0].message.content == f"Answer from {model_candidate}"
+    assert response.model == model_candidate

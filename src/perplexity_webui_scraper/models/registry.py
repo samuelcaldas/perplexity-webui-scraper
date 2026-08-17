@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from importlib.resources import files
-from re import fullmatch
+from re import fullmatch, sub
 from warnings import warn
 
 from orjson import loads
@@ -36,9 +36,7 @@ class ModelRegistry:
 
     def __init__(self, raw_models: list[dict[str, object]] | None = None) -> None:
         """Load models from the bundled ``models.json`` static asset."""
-        self._models, self._aliases = self._load(
-            raw_models if raw_models is not None else self._read_static_models()
-        )
+        self._models, self._aliases = self._load(raw_models if raw_models is not None else self._read_static_models())
 
     @staticmethod
     def _read_static_models() -> list[dict[str, object]]:
@@ -76,14 +74,27 @@ class ModelRegistry:
             models[model.id] = model
             tool_names.add(model.tool_name)
 
+            # Auto-register bare model id without provider prefix as alias (e.g. 'best', 'claude-sonnet-5')
+            if "/" in model.id:
+                bare_id = model.id.split("/", 1)[1]
+                aliases.setdefault(bare_id, model)
+
             for alias in model.aliases:
                 aliases[alias] = model
+                if "/" in alias:
+                    aliases.setdefault(alias.split("/", 1)[1], model)
 
         return models, aliases
 
     def is_registered(self, model_id: str) -> bool:
         """Return whether model_id is present in registered models or aliases."""
-        return model_id in self._models or model_id in self._aliases
+        clean_id = sub(r"\[.*?\]", "", model_id).strip()
+        return (
+            model_id in self._models
+            or model_id in self._aliases
+            or clean_id in self._models
+            or clean_id in self._aliases
+        )
 
     def resolve(self, model_id: str, *, fallback_dynamic: bool = False) -> Model:
         """Look up a model by its canonical string ID or alias.
@@ -98,11 +109,13 @@ class ModelRegistry:
         Raises:
             ValueError: If ``model_id`` is not registered and fallback_dynamic is False.
         """
-        if model_id in self._models:
-            return self._models[model_id]
+        clean_id = sub(r"\[.*?\]", "", model_id).strip()
 
-        if model_id in self._aliases:
-            return self._aliases[model_id]
+        for candidate in (model_id, clean_id):
+            if candidate in self._models:
+                return self._models[candidate]
+            if candidate in self._aliases:
+                return self._aliases[candidate]
 
         if fallback_dynamic:
             provider = model_id.split("/", 1)[0] if "/" in model_id else "custom"

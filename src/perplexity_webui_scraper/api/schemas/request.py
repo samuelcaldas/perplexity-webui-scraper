@@ -441,10 +441,7 @@ class ChatCompletionRequest(BaseModel):
         return self
 
     def _validate_tool_request_options(self) -> None:
-        """Reject unsupported stream/tool combinations and undeclared choices."""
-        if self.stream and self.tools:
-            raise ValueError("streaming tool calls are not supported")
-
+        """Reject invalid tool choices and undeclared functions."""
         if self.tool_choice == "required" and not self.tools:
             raise ValueError("tool_choice='required' requires declared tools")
 

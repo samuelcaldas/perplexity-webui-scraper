@@ -55,9 +55,7 @@
     "identifier": "gpt56_terra",
     "thinking_identifier": "gpt56_terra_thinking",
     "supports_thinking": true,
-    "aliases": [
-      "openai/gpt-5.6-terra-thinking"
-    ],
+    "aliases": ["openai/gpt-5.6-terra-thinking"],
     "tool_name": "pplx_gpt56_terra",
     "min_tier": "pro",
     "mode": "copilot",
@@ -73,9 +71,7 @@
     "identifier": "gpt56_sol",
     "thinking_identifier": "gpt56_sol_thinking",
     "supports_thinking": true,
-    "aliases": [
-      "openai/gpt-5.6-sol-thinking"
-    ],
+    "aliases": ["openai/gpt-5.6-sol-thinking"],
     "tool_name": "pplx_gpt56_sol",
     "min_tier": "max",
     "mode": "copilot",
@@ -91,9 +87,7 @@
     "identifier": "claude50sonnet",
     "thinking_identifier": "claude50sonnetthinking",
     "supports_thinking": true,
-    "aliases": [
-      "anthropic/claude-sonnet-5-thinking"
-    ],
+    "aliases": ["anthropic/claude-sonnet-5-thinking"],
     "tool_name": "pplx_claude_s50",
     "min_tier": "pro",
     "mode": "copilot",
@@ -141,9 +135,7 @@
     "description": "Moonshot AI's latest reasoning model",
     "identifier": "kimik3thinking",
     "supports_thinking": true,
-    "aliases": [
-      "moonshot/kimi-k3-thinking"
-    ],
+    "aliases": ["moonshot/kimi-k3-thinking"],
     "tool_name": "pplx_kimi_k3",
     "min_tier": "pro",
     "mode": "copilot",
@@ -159,9 +151,7 @@
     "identifier": "grok45low",
     "thinking_identifier": "grok45medium",
     "supports_thinking": true,
-    "aliases": [
-      "x-ai/grok-4.5-thinking"
-    ],
+    "aliases": ["x-ai/grok-4.5-thinking"],
     "tool_name": "pplx_grok45",
     "provider": "x-ai",
     "min_tier": "pro",
@@ -176,9 +166,7 @@
     "description": "NVIDIA's Nemotron 3 Ultra 550B model",
     "identifier": "nv_nemotron_3_ultra",
     "supports_thinking": true,
-    "aliases": [
-      "nvidia/nemotron-3-ultra-thinking"
-    ],
+    "aliases": ["nvidia/nemotron-3-ultra-thinking"],
     "tool_name": "pplx_nemotron3_ultra",
     "min_tier": "pro",
     "mode": "copilot",
@@ -194,9 +182,7 @@
     "identifier": "claude50opus",
     "thinking_identifier": "claude50opusthinking",
     "supports_thinking": true,
-    "aliases": [
-      "anthropic/claude-opus-5-thinking"
-    ],
+    "aliases": ["anthropic/claude-opus-5-thinking"],
     "tool_name": "pplx_claude_o50",
     "min_tier": "max",
     "mode": "copilot",
@@ -212,9 +198,7 @@
     "identifier": "claude48opus",
     "thinking_identifier": "claude48opusthinking",
     "supports_thinking": true,
-    "aliases": [
-      "anthropic/claude-opus-4.8-thinking"
-    ],
+    "aliases": ["anthropic/claude-opus-4.8-thinking"],
     "tool_name": "pplx_claude_o48",
     "min_tier": "max",
     "mode": "copilot",
@@ -230,10 +214,7 @@
     "identifier": "kimik26instant",
     "thinking_identifier": "kimik26thinking",
     "supports_thinking": true,
-    "aliases": [
-      "moonshot/kimi-k2.6-instant",
-      "moonshot/kimi-k2.6-thinking"
-    ],
+    "aliases": ["moonshot/kimi-k2.6-instant", "moonshot/kimi-k2.6-thinking"],
     "tool_name": "pplx_kimi_k26",
     "min_tier": "pro",
     "mode": "copilot",
@@ -248,9 +229,7 @@
     "description": "NVIDIA's Nemotron 3 Super 120B model",
     "identifier": "nv_nemotron_3_super",
     "supports_thinking": true,
-    "aliases": [
-      "nvidia/nemotron-3-super-thinking"
-    ],
+    "aliases": ["nvidia/nemotron-3-super-thinking"],
     "tool_name": "pplx_nemotron3_super",
     "min_tier": "pro",
     "mode": "copilot",

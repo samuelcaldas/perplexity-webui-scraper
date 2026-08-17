@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from base64 import b64decode
 import json
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from fastapi.testclient import TestClient
@@ -562,8 +563,10 @@ def test_provider_error_restores_cached_continuation_state(client: TestClient) -
     assert _conversation_cache._store[(TOKEN, THREAD_UUID)].pending_tool_calls == pending_tool_calls
 
 
-def test_streaming_tools_are_rejected_before_provider_call(client: TestClient) -> None:
-    conversation = _make_conversation("answer")
+def test_streaming_tools_are_supported(client: TestClient) -> None:
+    tool_answer = _tool_answer()
+    conversation = _make_conversation(tool_answer)
+    conversation.__iter__ = MagicMock(return_value=iter([SimpleNamespace(last_chunk=tool_answer, answer=tool_answer)]))
     provider = _make_client(conversation)
 
     with patch(
@@ -581,8 +584,15 @@ def test_streaming_tools_are_rejected_before_provider_call(client: TestClient) -
             headers={"Authorization": AUTH_HEADER},
         )
 
-    assert response.status_code == 422
-    provider.create_conversation.assert_not_called()
+    assert response.status_code == 200
+    assert "text/event-stream" in response.headers["content-type"]
+    lines = [line for line in response.text.split("\n") if line.startswith("data: ") and line != "data: [DONE]"]
+    chunks = [json.loads(line[6:]) for line in lines]
+    tool_chunks = [c for c in chunks if c.get("choices", [{}])[0].get("delta", {}).get("tool_calls")]
+    assert len(tool_chunks) >= 1
+    call = tool_chunks[0]["choices"][0]["delta"]["tool_calls"][0]
+    assert call["function"]["name"] == "get_weather"
+    assert "Boston" in call["function"]["arguments"]
 
 
 def test_cached_thread_rejects_fabricated_tool_call(client: TestClient) -> None:

@@ -280,4 +280,3 @@ def test_openai_sdk_legacy_thinking_alias_backward_compat(openai_client: OpenAI)
     provider.create_conversation.assert_called_once()
     config = provider.create_conversation.call_args[0][0]
     assert config.model == "anthropic/claude-sonnet-5-thinking"
-

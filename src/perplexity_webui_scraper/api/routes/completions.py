@@ -5,7 +5,6 @@ from __future__ import annotations
 from asyncio import CancelledError, Lock
 from functools import partial
 import json
-from os.path import commonprefix
 from time import time
 from typing import TYPE_CHECKING, Annotated, cast
 from uuid import uuid4
@@ -28,12 +27,15 @@ from perplexity_webui_scraper.api.schemas.response import (
     ChatCompletionChunk,
     ChatCompletionChunkChoice,
     ChatCompletionChunkDelta,
+    ChatCompletionChunkDeltaFunction,
+    ChatCompletionChunkDeltaToolCall,
     ChatCompletionResponse,
     ChatCompletionToolCall,
     ChatCompletionToolCallFunction,
     PerplexityResponseExtensions,
 )
 from perplexity_webui_scraper.api.tool_calling import (
+    TOOL_CALL_SENTINEL_START,
     EmulatedToolCall,
     parse_emulated_tool_call,
     requires_tool_call,
@@ -90,7 +92,7 @@ async def chat_completions(
             return StreamingResponse(
                 _stream_response(
                     conversation,
-                    request.model,
+                    request,
                     token,
                     client,
                     request_lock,
@@ -139,11 +141,7 @@ def _validate_model(request: ChatCompletionRequest) -> None:
         ext = request.perplexity
         is_registered = getattr(MODELS, "is_registered", lambda m: False)(request.model)
         is_custom_or_dynamic = request.model.startswith("custom:") or not is_registered
-        allow_risky = (
-            ext.allow_risky_model
-            if (ext and ext.allow_risky_model is not None)
-            else is_custom_or_dynamic
-        )
+        allow_risky = ext.allow_risky_model if (ext and ext.allow_risky_model is not None) else is_custom_or_dynamic
         MODELS.resolve_for_use(
             request.model,
             allow_risky_model=allow_risky,
@@ -347,17 +345,29 @@ async def _build_completion_response(
 
 async def _stream_response(
     conversation: Conversation,
-    model_id: str,
+    request: ChatCompletionRequest | str,
     token: str,
     client: Perplexity,
     request_lock: Lock,
     release_request: Callable[[], None] | None = None,
     config_fingerprint: str | None = None,
 ) -> AsyncGenerator[str, None]:
-    """Yield SSE lines, framing upstream failures without fake success."""
+    """Yield SSE lines, supporting text streaming and emulated tool calls."""
     completion_id = f"chatcmpl-{uuid4().hex}"
     created = int(time())
+    if isinstance(request, str):
+        model_id = request
+        has_tools = False
+        req_tools = None
+        req_tool_choice = None
+    else:
+        model_id = request.model
+        has_tools = bool(request.tools)
+        req_tools = request.tools
+        req_tool_choice = request.tool_choice
     last_content = ""
+    sentinel_started = False
+    emitted_len = 0
 
     try:
         iterator = iter(conversation)
@@ -374,45 +384,140 @@ async def _stream_response(
                 break
 
             current = response.last_chunk or response.answer or ""
-            if not current or current == last_content:
-                continue
-
-            common_len = len(commonprefix([last_content, current]))
-            delta = current[common_len:]
-            if not delta:
+            if not current:
                 continue
 
             last_content = current
-            yield ChatCompletionChunk(
-                id=completion_id,
-                created=created,
-                model=model_id,
-                choices=[ChatCompletionChunkChoice(delta=ChatCompletionChunkDelta(content=delta))],
-            ).to_sse_line()
+
+            if has_tools:
+                if TOOL_CALL_SENTINEL_START in current:
+                    sentinel_pos = current.find(TOOL_CALL_SENTINEL_START)
+                    if not sentinel_started and sentinel_pos > emitted_len:
+                        delta = current[emitted_len:sentinel_pos]
+                        emitted_len = sentinel_pos
+                        if delta:
+                            yield ChatCompletionChunk(
+                                id=completion_id,
+                                created=created,
+                                model=model_id,
+                                choices=[ChatCompletionChunkChoice(delta=ChatCompletionChunkDelta(content=delta))],
+                            ).to_sse_line()
+                    sentinel_started = True
+                elif not sentinel_started:
+                    safe_len = len(current)
+                    for i in range(1, min(len(TOOL_CALL_SENTINEL_START), len(current)) + 1):
+                        if TOOL_CALL_SENTINEL_START.startswith(current[-i:]):
+                            safe_len = len(current) - i
+                            break
+                    if safe_len > emitted_len:
+                        delta = current[emitted_len:safe_len]
+                        emitted_len = safe_len
+                        if delta:
+                            yield ChatCompletionChunk(
+                                id=completion_id,
+                                created=created,
+                                model=model_id,
+                                choices=[ChatCompletionChunkChoice(delta=ChatCompletionChunkDelta(content=delta))],
+                            ).to_sse_line()
+            else:
+                delta = current[emitted_len:]
+                if delta:
+                    emitted_len = len(current)
+                    yield ChatCompletionChunk(
+                        id=completion_id,
+                        created=created,
+                        model=model_id,
+                        choices=[ChatCompletionChunkChoice(delta=ChatCompletionChunkDelta(content=delta))],
+                    ).to_sse_line()
 
         conv_uuid = conversation.uuid
+        emulated_tool_call: EmulatedToolCall | None = None
+
+        if has_tools:
+            emulated_tool_call = parse_emulated_tool_call(last_content, req_tools, req_tool_choice)
+            if requires_tool_call(req_tools, req_tool_choice) and emulated_tool_call is None:
+                error_payload = {
+                    "error": {
+                        "message": "Provider response did not contain a valid required tool call.",
+                        "type": "invalid_request_error",
+                        "code": "tool_call_missing",
+                    }
+                }
+                yield f"event: error\ndata: {json.dumps(error_payload)}\n\n"
+                return
+
+        pending_tool_calls = _pending_tool_call_metadata(emulated_tool_call)
         if conv_uuid:
             async with _conversation_cache.lock:
                 _conversation_cache.set(
                     token,
                     conv_uuid,
                     conversation,
+                    pending_tool_calls=pending_tool_calls,
                     config_fingerprint=config_fingerprint,
                 )
 
         pplx_ext = PerplexityResponseExtensions(thread_uuid=conv_uuid) if conv_uuid else None
-        yield ChatCompletionChunk(
-            id=completion_id,
-            created=created,
-            model=model_id,
-            choices=[
-                ChatCompletionChunkChoice(
-                    delta=ChatCompletionChunkDelta(),
-                    finish_reason="stop",
-                )
-            ],
-            perplexity=pplx_ext,
-        ).to_sse_line()
+
+        if emulated_tool_call is not None:
+            yield ChatCompletionChunk(
+                id=completion_id,
+                created=created,
+                model=model_id,
+                choices=[
+                    ChatCompletionChunkChoice(
+                        delta=ChatCompletionChunkDelta(
+                            tool_calls=[
+                                ChatCompletionChunkDeltaToolCall(
+                                    index=0,
+                                    id=emulated_tool_call.call_id,
+                                    type="function",
+                                    function=ChatCompletionChunkDeltaFunction(
+                                        name=emulated_tool_call.function_name,
+                                        arguments=serialize_tool_arguments(emulated_tool_call.arguments),
+                                    ),
+                                )
+                            ]
+                        )
+                    )
+                ],
+            ).to_sse_line()
+            yield ChatCompletionChunk(
+                id=completion_id,
+                created=created,
+                model=model_id,
+                choices=[
+                    ChatCompletionChunkChoice(
+                        delta=ChatCompletionChunkDelta(),
+                        finish_reason="tool_calls",
+                    )
+                ],
+                perplexity=pplx_ext,
+            ).to_sse_line()
+        else:
+            if has_tools and emitted_len < len(last_content):
+                remaining_delta = last_content[emitted_len:]
+                if remaining_delta:
+                    yield ChatCompletionChunk(
+                        id=completion_id,
+                        created=created,
+                        model=model_id,
+                        choices=[ChatCompletionChunkChoice(delta=ChatCompletionChunkDelta(content=remaining_delta))],
+                    ).to_sse_line()
+
+            yield ChatCompletionChunk(
+                id=completion_id,
+                created=created,
+                model=model_id,
+                choices=[
+                    ChatCompletionChunkChoice(
+                        delta=ChatCompletionChunkDelta(),
+                        finish_reason="stop",
+                    )
+                ],
+                perplexity=pplx_ext,
+            ).to_sse_line()
+
         yield "data: [DONE]\n\n"
     except (CancelledError, BrokenPipeError):
         return

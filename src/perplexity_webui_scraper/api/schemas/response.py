@@ -166,16 +166,34 @@ class ChatCompletionResponse(BaseModel):
         )
 
 
+class ChatCompletionChunkDeltaFunction(BaseModel):
+    """Incremental function call specification in a streaming tool call chunk."""
+
+    name: str | None = None
+    arguments: str | None = None
+
+
+class ChatCompletionChunkDeltaToolCall(BaseModel):
+    """Incremental tool call item within a streaming chunk delta."""
+
+    index: int = 0
+    id: str | None = None
+    type: Literal["function"] = "function"
+    function: ChatCompletionChunkDeltaFunction | None = None
+
+
 class ChatCompletionChunkDelta(BaseModel):
     """Incremental content delta in a streaming chunk.
 
     Attributes:
         role: Set to ``"assistant"`` on the first chunk; absent thereafter.
         content: Incremental text content for this chunk.
+        tool_calls: Incremental tool calls for this chunk.
     """
 
     role: Literal["assistant"] | None = None
     content: str | None = None
+    tool_calls: list[ChatCompletionChunkDeltaToolCall] | None = None
 
 
 class ChatCompletionChunkChoice(BaseModel):
@@ -184,12 +202,12 @@ class ChatCompletionChunkChoice(BaseModel):
     Attributes:
         index: Always ``0``.
         delta: The :class:`ChatCompletionChunkDelta` for this chunk.
-        finish_reason: ``"stop"`` on the final chunk; ``None`` otherwise.
+        finish_reason: ``"stop"`` or ``"tool_calls"`` on the final chunk; ``None`` otherwise.
     """
 
     index: int = 0
     delta: ChatCompletionChunkDelta
-    finish_reason: Literal["stop"] | None = None
+    finish_reason: Literal["stop", "tool_calls"] | None = None
 
 
 class ChatCompletionChunk(BaseModel):

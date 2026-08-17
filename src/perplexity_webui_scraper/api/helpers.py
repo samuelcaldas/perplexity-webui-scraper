@@ -31,7 +31,7 @@ def build_query_and_files(
     if request.perplexity is not None and request.perplexity.response_format == "json_object":
         parts.append(f"[System]: {_JSON_SYSTEM_PROMPT}")
 
-    tool_instruction = None if request.stream else build_tool_instruction(request.tools, request.tool_choice)
+    tool_instruction = build_tool_instruction(request.tools, request.tool_choice)
 
     if tool_instruction is not None:
         parts.append(f"[System]: {tool_instruction}")
@@ -79,7 +79,7 @@ def build_tool_result_follow_up(request: ChatCompletionRequest) -> str | None:
 
     parts = [_format_message(assistant)]
     parts.extend(_format_message(message) for message in messages[tool_start:])
-    tool_instruction = None if request.stream else build_tool_instruction(request.tools, request.tool_choice)
+    tool_instruction = build_tool_instruction(request.tools, request.tool_choice)
 
     if tool_instruction is not None:
         parts.insert(0, f"[System]: {tool_instruction}")
@@ -96,11 +96,7 @@ def build_conversation_config(
     """Build a :class:`ConversationConfig` from a model ID and Perplexity extensions."""
     is_registered = getattr(MODELS, "is_registered", lambda m: False)(model)
     is_custom_or_dynamic = model.startswith("custom:") or not is_registered
-    allow_risky = (
-        ext.allow_risky_model
-        if (ext and ext.allow_risky_model is not None)
-        else is_custom_or_dynamic
-    )
+    allow_risky = ext.allow_risky_model if (ext and ext.allow_risky_model is not None) else is_custom_or_dynamic
     effective_thinking = ext.thinking if (ext and ext.thinking is not None) else thinking
 
     if ext is None:
