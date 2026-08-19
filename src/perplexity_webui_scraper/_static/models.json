@@ -33,7 +33,9 @@
     "provider": "perplexity",
     "status": "available",
     "last_tested_at": "2026-08-05T23:31:30.488422Z",
-    "is_official": true
+    "is_official": true,
+    "supports_thinking": true,
+    "thinking_only": true
   },
   {
     "id": "perplexity/sonar-2",
@@ -142,7 +144,8 @@
     "provider": "moonshot",
     "status": "available",
     "last_tested_at": "2026-08-05T23:32:13.388185Z",
-    "is_official": true
+    "is_official": true,
+    "thinking_only": true
   },
   {
     "id": "x-ai/grok-4.5",
@@ -249,33 +252,10 @@
     "provider": "openai",
     "status": "unavailable",
     "last_tested_at": "2026-08-16T00:00:00Z",
-    "is_official": false
-  },
-  {
-    "id": "openai/gpt-5.4-thinking",
-    "name": "GPT-5.4 Thinking",
-    "description": "OpenAI's versatile model with thinking",
-    "identifier": "gpt54_thinking",
-    "tool_name": "pplx_gpt54_thinking",
-    "min_tier": "pro",
-    "mode": "copilot",
-    "provider": "openai",
-    "status": "unavailable",
-    "last_tested_at": "2026-08-16T00:00:00Z",
-    "is_official": false
-  },
-  {
-    "id": "openai/gpt-5.5-thinking",
-    "name": "GPT-5.5 Thinking",
-    "description": "OpenAI's latest model with thinking",
-    "identifier": "gpt55_thinking",
-    "tool_name": "pplx_gpt55_thinking",
-    "min_tier": "max",
-    "mode": "copilot",
-    "provider": "openai",
-    "status": "unavailable",
-    "last_tested_at": "2026-08-16T00:00:00Z",
-    "is_official": false
+    "is_official": false,
+    "supports_thinking": true,
+    "thinking_identifier": "gpt54_thinking",
+    "aliases": ["openai/gpt-5.4-thinking"]
   },
   {
     "id": "anthropic/claude-opus-4.7",
@@ -288,20 +268,13 @@
     "provider": "anthropic",
     "status": "unavailable",
     "last_tested_at": "2026-08-16T00:00:00Z",
-    "is_official": false
-  },
-  {
-    "id": "anthropic/claude-opus-4.7-thinking",
-    "name": "Claude Opus 4.7 Thinking",
-    "description": "Anthropic's most advanced model with thinking",
-    "identifier": "claude47opusthinking",
-    "tool_name": "pplx_claude_o47_think",
-    "min_tier": "max",
-    "mode": "copilot",
-    "provider": "anthropic",
-    "status": "unavailable",
-    "last_tested_at": "2026-08-16T00:00:00Z",
-    "is_official": false
+    "is_official": false,
+    "supports_thinking": true,
+    "thinking_identifier": "claude47opusthinking",
+    "aliases": [
+      "anthropic/claude-opus-4.7-thinking",
+      "anthropic/claude47opusthinking"
+    ]
   },
   {
     "id": "anthropic/claude-sonnet-4.6",
@@ -314,20 +287,13 @@
     "provider": "anthropic",
     "status": "unavailable",
     "last_tested_at": "2026-08-16T00:00:00Z",
-    "is_official": false
-  },
-  {
-    "id": "anthropic/claude-sonnet-4.6-thinking",
-    "name": "Claude Sonnet 4.6 Thinking",
-    "description": "Anthropic's newest reasoning model",
-    "identifier": "claude46sonnetthinking",
-    "tool_name": "pplx_claude_s46_think",
-    "min_tier": "pro",
-    "mode": "copilot",
-    "provider": "anthropic",
-    "status": "unavailable",
-    "last_tested_at": "2026-08-16T00:00:00Z",
-    "is_official": false
+    "is_official": false,
+    "supports_thinking": true,
+    "thinking_identifier": "claude46sonnetthinking",
+    "aliases": [
+      "anthropic/claude-sonnet-4.6-thinking",
+      "anthropic/claude46sonnetthinking"
+    ]
   },
   {
     "id": "openai/gpt4o",
@@ -366,20 +332,10 @@
     "mode": "copilot",
     "status": "unavailable",
     "last_tested_at": "2026-08-16T00:00:00Z",
-    "is_official": false
-  },
-  {
-    "id": "openai/gpt5-thinking",
-    "name": "GPT-5 Thinking",
-    "description": "OpenAI's latest model with thinking",
-    "identifier": "gpt5_thinking",
-    "tool_name": "pplx_gpt5_thinking",
-    "provider": "openai",
-    "min_tier": null,
-    "mode": "copilot",
-    "status": "unavailable",
-    "last_tested_at": "2026-08-16T00:00:00Z",
-    "is_official": false
+    "is_official": false,
+    "supports_thinking": true,
+    "thinking_identifier": "gpt5_thinking",
+    "aliases": ["openai/gpt-5", "openai/gpt5-thinking", "openai/gpt-5-thinking"]
   },
   {
     "id": "openai/gpt51",
@@ -392,33 +348,15 @@
     "mode": "copilot",
     "status": "unavailable",
     "last_tested_at": "2026-08-16T00:00:00Z",
-    "is_official": false
-  },
-  {
-    "id": "openai/gpt51-thinking",
-    "name": "GPT-5.1 Thinking",
-    "description": "OpenAI's latest model with thinking",
-    "identifier": "gpt51_thinking",
-    "tool_name": "pplx_gpt51_thinking",
-    "provider": "openai",
-    "min_tier": null,
-    "mode": "copilot",
-    "status": "unavailable",
-    "last_tested_at": "2026-08-16T00:00:00Z",
-    "is_official": false
-  },
-  {
-    "id": "openai/gpt51-low-thinking",
-    "name": "GPT-5.1 Low Thinking",
-    "description": "OpenAI's latest model with low reasoning effort",
-    "identifier": "gpt51_low_thinking",
-    "tool_name": "pplx_gpt51_low_thinking",
-    "provider": "openai",
-    "min_tier": null,
-    "mode": "copilot",
-    "status": "unavailable",
-    "last_tested_at": "2026-08-16T00:00:00Z",
-    "is_official": false
+    "is_official": false,
+    "supports_thinking": true,
+    "thinking_identifier": "gpt51_thinking",
+    "aliases": [
+      "openai/gpt-5.1",
+      "openai/gpt51-thinking",
+      "openai/gpt-5.1-thinking",
+      "openai/gpt51-low-thinking"
+    ]
   },
   {
     "id": "openai/gpt5-mini",
@@ -457,7 +395,9 @@
     "mode": "copilot",
     "status": "unavailable",
     "last_tested_at": "2026-08-16T00:00:00Z",
-    "is_official": false
+    "is_official": false,
+    "supports_thinking": true,
+    "thinking_only": true
   },
   {
     "id": "openai/gpt52",
@@ -470,20 +410,14 @@
     "mode": "copilot",
     "status": "unavailable",
     "last_tested_at": "2026-08-16T00:00:00Z",
-    "is_official": false
-  },
-  {
-    "id": "openai/gpt52-thinking",
-    "name": "GPT-5.2 Thinking",
-    "description": "OpenAI's latest model with thinking",
-    "identifier": "gpt52_thinking",
-    "tool_name": "pplx_gpt52_thinking",
-    "provider": "openai",
-    "min_tier": null,
-    "mode": "copilot",
-    "status": "unavailable",
-    "last_tested_at": "2026-08-16T00:00:00Z",
-    "is_official": false
+    "is_official": false,
+    "supports_thinking": true,
+    "thinking_identifier": "gpt52_thinking",
+    "aliases": [
+      "openai/gpt-5.2",
+      "openai/gpt52-thinking",
+      "openai/gpt-5.2-thinking"
+    ]
   },
   {
     "id": "openai/gpt52-pro",
@@ -496,7 +430,9 @@
     "mode": "copilot",
     "status": "unavailable",
     "last_tested_at": "2026-08-16T00:00:00Z",
-    "is_official": false
+    "is_official": false,
+    "supports_thinking": true,
+    "thinking_only": true
   },
   {
     "id": "openai/gpt55",
@@ -509,7 +445,14 @@
     "mode": "copilot",
     "status": "unavailable",
     "last_tested_at": "2026-08-16T00:00:00Z",
-    "is_official": false
+    "is_official": false,
+    "supports_thinking": true,
+    "thinking_identifier": "gpt55_thinking",
+    "aliases": [
+      "openai/gpt-5.5",
+      "openai/gpt-5.5-thinking",
+      "openai/gpt55-thinking"
+    ]
   },
   {
     "id": "anthropic/claude2",
@@ -522,33 +465,16 @@
     "mode": "copilot",
     "status": "unavailable",
     "last_tested_at": "2026-08-16T00:00:00Z",
-    "is_official": false
-  },
-  {
-    "id": "anthropic/claude37sonnetthinking",
-    "name": "Claude Sonnet 4.0 Thinking",
-    "description": "Anthropic's reasoning model",
-    "identifier": "claude37sonnetthinking",
-    "tool_name": "pplx_claude37sonnetthinking",
-    "provider": "anthropic",
-    "min_tier": null,
-    "mode": "copilot",
-    "status": "unavailable",
-    "last_tested_at": "2026-08-16T00:00:00Z",
-    "is_official": false
-  },
-  {
-    "id": "anthropic/claude40sonnetthinking",
-    "name": "Claude Sonnet 4.0 Thinking",
-    "description": "Anthropic's reasoning model",
-    "identifier": "claude40sonnetthinking",
-    "tool_name": "pplx_claude40sonnetthinking",
-    "provider": "anthropic",
-    "min_tier": null,
-    "mode": "copilot",
-    "status": "unavailable",
-    "last_tested_at": "2026-08-16T00:00:00Z",
-    "is_official": false
+    "is_official": false,
+    "supports_thinking": true,
+    "thinking_identifier": "claude40sonnetthinking",
+    "aliases": [
+      "anthropic/claude-sonnet-4",
+      "anthropic/claude37sonnetthinking",
+      "anthropic/claude40sonnetthinking",
+      "anthropic/claude-4.0-sonnet-thinking",
+      "anthropic/claude-3.7-sonnet-thinking"
+    ]
   },
   {
     "id": "google/gemini25pro",
@@ -587,20 +513,10 @@
     "mode": "copilot",
     "status": "unavailable",
     "last_tested_at": "2026-08-16T00:00:00Z",
-    "is_official": false
-  },
-  {
-    "id": "google/gemini30flash-high",
-    "name": "Gemini 3 Flash Thinking",
-    "description": "Google's fast model",
-    "identifier": "gemini30flash_high",
-    "tool_name": "pplx_gemini30flash_high",
-    "provider": "google",
-    "min_tier": null,
-    "mode": "copilot",
-    "status": "unavailable",
-    "last_tested_at": "2026-08-16T00:00:00Z",
-    "is_official": false
+    "is_official": false,
+    "supports_thinking": true,
+    "thinking_identifier": "gemini30flash_high",
+    "aliases": ["google/gemini30flash-high", "google/gemini-3.0-flash-thinking"]
   },
   {
     "id": "google/gemini35flash",
@@ -613,33 +529,14 @@
     "mode": "copilot",
     "status": "unavailable",
     "last_tested_at": "2026-08-16T00:00:00Z",
-    "is_official": false
-  },
-  {
-    "id": "google/gemini35flash-medium",
-    "name": "Gemini 3.5 Flash Medium Thinking",
-    "description": "Google's fast model with medium thinking",
-    "identifier": "gemini35flash_medium",
-    "tool_name": "pplx_gemini35flash_medium",
-    "provider": "google",
-    "min_tier": null,
-    "mode": "copilot",
-    "status": "unavailable",
-    "last_tested_at": "2026-08-16T00:00:00Z",
-    "is_official": false
-  },
-  {
-    "id": "google/gemini35flash-high",
-    "name": "Gemini 3.5 Flash Thinking",
-    "description": "Google's fast model with thinking",
-    "identifier": "gemini35flash_high",
-    "tool_name": "pplx_gemini35flash_high",
-    "provider": "google",
-    "min_tier": null,
-    "mode": "copilot",
-    "status": "unavailable",
-    "last_tested_at": "2026-08-16T00:00:00Z",
-    "is_official": false
+    "is_official": false,
+    "supports_thinking": true,
+    "thinking_identifier": "gemini35flash_high",
+    "aliases": [
+      "google/gemini35flash-medium",
+      "google/gemini35flash-high",
+      "google/gemini-3.5-flash-thinking"
+    ]
   },
   {
     "id": "x-ai/grok",
@@ -665,20 +562,13 @@
     "mode": "copilot",
     "status": "unavailable",
     "last_tested_at": "2026-08-16T00:00:00Z",
-    "is_official": false
-  },
-  {
-    "id": "anthropic/claude40opusthinking",
-    "name": "Claude Opus 4.0 Thinking",
-    "description": "Anthropic's Opus reasoning model with thinking",
-    "identifier": "claude40opusthinking",
-    "tool_name": "pplx_claude40opusthinking",
-    "provider": "anthropic",
-    "min_tier": null,
-    "mode": "copilot",
-    "status": "unavailable",
-    "last_tested_at": "2026-08-16T00:00:00Z",
-    "is_official": false
+    "is_official": false,
+    "supports_thinking": true,
+    "thinking_identifier": "claude40opusthinking",
+    "aliases": [
+      "anthropic/claude40opusthinking",
+      "anthropic/claude-4.0-opus-thinking"
+    ]
   },
   {
     "id": "anthropic/claude41opus",
@@ -691,20 +581,13 @@
     "mode": "copilot",
     "status": "unavailable",
     "last_tested_at": "2026-08-16T00:00:00Z",
-    "is_official": false
-  },
-  {
-    "id": "anthropic/claude41opusthinking",
-    "name": "Claude Opus 4.1 Thinking",
-    "description": "Anthropic's Opus reasoning model with thinking",
-    "identifier": "claude41opusthinking",
-    "tool_name": "pplx_claude41opusthinking",
-    "provider": "anthropic",
-    "min_tier": null,
-    "mode": "copilot",
-    "status": "unavailable",
-    "last_tested_at": "2026-08-16T00:00:00Z",
-    "is_official": false
+    "is_official": false,
+    "supports_thinking": true,
+    "thinking_identifier": "claude41opusthinking",
+    "aliases": [
+      "anthropic/claude41opusthinking",
+      "anthropic/claude-4.1-opus-thinking"
+    ]
   },
   {
     "id": "anthropic/claude45opus",
@@ -717,20 +600,13 @@
     "mode": "copilot",
     "status": "unavailable",
     "last_tested_at": "2026-08-16T00:00:00Z",
-    "is_official": false
-  },
-  {
-    "id": "anthropic/claude45opusthinking",
-    "name": "Claude Opus 4.5 Thinking",
-    "description": "Anthropic's Opus reasoning model with thinking",
-    "identifier": "claude45opusthinking",
-    "tool_name": "pplx_claude45opusthinking",
-    "provider": "anthropic",
-    "min_tier": null,
-    "mode": "copilot",
-    "status": "unavailable",
-    "last_tested_at": "2026-08-16T00:00:00Z",
-    "is_official": false
+    "is_official": false,
+    "supports_thinking": true,
+    "thinking_identifier": "claude45opusthinking",
+    "aliases": [
+      "anthropic/claude45opusthinking",
+      "anthropic/claude-4.5-opus-thinking"
+    ]
   },
   {
     "id": "anthropic/claude46opus",
@@ -743,20 +619,13 @@
     "mode": "copilot",
     "status": "unavailable",
     "last_tested_at": "2026-08-16T00:00:00Z",
-    "is_official": false
-  },
-  {
-    "id": "anthropic/claude46opusthinking",
-    "name": "Claude Opus 4.6 Thinking",
-    "description": "Anthropic's Opus reasoning model with thinking",
-    "identifier": "claude46opusthinking",
-    "tool_name": "pplx_claude46opusthinking",
-    "provider": "anthropic",
-    "min_tier": null,
-    "mode": "copilot",
-    "status": "unavailable",
-    "last_tested_at": "2026-08-16T00:00:00Z",
-    "is_official": false
+    "is_official": false,
+    "supports_thinking": true,
+    "thinking_identifier": "claude46opusthinking",
+    "aliases": [
+      "anthropic/claude46opusthinking",
+      "anthropic/claude-4.6-opus-thinking"
+    ]
   },
   {
     "id": "anthropic/claude45sonnet",
@@ -769,20 +638,13 @@
     "mode": "copilot",
     "status": "unavailable",
     "last_tested_at": "2026-08-16T00:00:00Z",
-    "is_official": false
-  },
-  {
-    "id": "anthropic/claude45sonnetthinking",
-    "name": "Claude Sonnet 4.5 Thinking",
-    "description": "Anthropic's newest reasoning model",
-    "identifier": "claude45sonnetthinking",
-    "tool_name": "pplx_claude45sonnetthinking",
-    "provider": "anthropic",
-    "min_tier": null,
-    "mode": "copilot",
-    "status": "unavailable",
-    "last_tested_at": "2026-08-16T00:00:00Z",
-    "is_official": false
+    "is_official": false,
+    "supports_thinking": true,
+    "thinking_identifier": "claude45sonnetthinking",
+    "aliases": [
+      "anthropic/claude45sonnetthinking",
+      "anthropic/claude-4.5-sonnet-thinking"
+    ]
   },
   {
     "id": "anthropic/claude45haiku",
@@ -795,98 +657,89 @@
     "mode": "copilot",
     "status": "unavailable",
     "last_tested_at": "2026-08-16T00:00:00Z",
-    "is_official": false
+    "is_official": false,
+    "supports_thinking": true,
+    "thinking_identifier": "claude45haikuthinking",
+    "aliases": [
+      "anthropic/claude45haikuthinking",
+      "anthropic/claude-4.5-haiku-thinking"
+    ]
   },
   {
-    "id": "anthropic/claude45haikuthinking",
-    "name": "Claude Haiku 4.5 Thinking",
-    "description": "Anthropic's compact reasoning model",
-    "identifier": "claude45haikuthinking",
-    "tool_name": "pplx_claude45haikuthinking",
-    "provider": "anthropic",
-    "min_tier": null,
-    "mode": "copilot",
-    "status": "unavailable",
-    "last_tested_at": "2026-08-16T00:00:00Z",
-    "is_official": false
-  },
-  {
-    "id": "moonshot/kimik2thinking",
+    "id": "moonshot/kimik2",
     "name": "Kimi K2",
-    "description": "Moonshot AI's latest model",
+    "description": "Moonshot AI model with thinking support",
     "identifier": "kimik2thinking",
-    "tool_name": "pplx_kimik2thinking",
+    "tool_name": "pplx_kimik2",
     "provider": "moonshot",
     "min_tier": null,
     "mode": "copilot",
     "status": "unavailable",
     "last_tested_at": "2026-08-16T00:00:00Z",
-    "is_official": false
+    "is_official": false,
+    "supports_thinking": true,
+    "thinking_only": true,
+    "aliases": [
+      "moonshot/kimik2thinking",
+      "moonshot/kimi-k2",
+      "moonshot/kimi-k2-thinking"
+    ]
   },
   {
-    "id": "moonshot/kimik25thinking",
-    "name": "Kimi K2.5 Thinking",
-    "description": "Moonshot AI's latest model",
+    "id": "moonshot/kimik25",
+    "name": "Kimi K2.5",
+    "description": "Moonshot AI model with thinking support",
     "identifier": "kimik25thinking",
-    "tool_name": "pplx_kimik25thinking",
+    "tool_name": "pplx_kimik25",
     "provider": "moonshot",
     "min_tier": null,
     "mode": "copilot",
     "status": "unavailable",
     "last_tested_at": "2026-08-16T00:00:00Z",
-    "is_official": false
+    "is_official": false,
+    "supports_thinking": true,
+    "thinking_only": true,
+    "aliases": [
+      "moonshot/kimik25thinking",
+      "moonshot/kimi-k2.5",
+      "moonshot/kimi-k2.5-thinking"
+    ]
   },
   {
     "id": "x-ai/grok4",
     "name": "Grok 4",
-    "description": "xAI's reasoning model",
-    "identifier": "grok4",
+    "description": "xAI model with thinking support",
+    "identifier": "grok4nonthinking",
     "tool_name": "pplx_grok4",
     "provider": "x-ai",
     "min_tier": null,
     "mode": "copilot",
     "status": "unavailable",
     "last_tested_at": "2026-08-16T00:00:00Z",
-    "is_official": false
+    "is_official": false,
+    "thinking_identifier": "grok4",
+    "supports_thinking": true,
+    "aliases": ["x-ai/grok4nonthinking", "x-ai/grok4-thinking"]
   },
   {
-    "id": "x-ai/grok4nonthinking",
-    "name": "Grok 4",
-    "description": "xAI's advanced model",
-    "identifier": "grok4nonthinking",
-    "tool_name": "pplx_grok4nonthinking",
-    "provider": "x-ai",
-    "min_tier": null,
-    "mode": "copilot",
-    "status": "unavailable",
-    "last_tested_at": "2026-08-16T00:00:00Z",
-    "is_official": false
-  },
-  {
-    "id": "x-ai/grok41reasoning",
+    "id": "x-ai/grok41",
     "name": "Grok 4.1",
-    "description": "xAI's latest model",
-    "identifier": "grok41reasoning",
-    "tool_name": "pplx_grok41reasoning",
-    "provider": "x-ai",
-    "min_tier": null,
-    "mode": "copilot",
-    "status": "unavailable",
-    "last_tested_at": "2026-08-16T00:00:00Z",
-    "is_official": false
-  },
-  {
-    "id": "x-ai/grok41nonreasoning",
-    "name": "Grok 4.1",
-    "description": "xAI's latest model",
+    "description": "xAI model with reasoning support",
     "identifier": "grok41nonreasoning",
-    "tool_name": "pplx_grok41nonreasoning",
+    "tool_name": "pplx_grok41",
     "provider": "x-ai",
     "min_tier": null,
     "mode": "copilot",
     "status": "unavailable",
     "last_tested_at": "2026-08-16T00:00:00Z",
-    "is_official": false
+    "is_official": false,
+    "thinking_identifier": "grok41reasoning",
+    "supports_thinking": true,
+    "aliases": [
+      "x-ai/grok41reasoning",
+      "x-ai/grok41nonreasoning",
+      "x-ai/grok-4.1-thinking"
+    ]
   },
   {
     "id": "openai/o4mini",
@@ -899,7 +752,9 @@
     "mode": "research",
     "status": "unavailable",
     "last_tested_at": "2026-08-16T00:00:00Z",
-    "is_official": false
+    "is_official": false,
+    "supports_thinking": true,
+    "thinking_only": true
   },
   {
     "id": "openai/o3pro",
@@ -912,6 +767,8 @@
     "mode": "copilot",
     "status": "unavailable",
     "last_tested_at": "2026-08-16T00:00:00Z",
-    "is_official": false
+    "is_official": false,
+    "supports_thinking": true,
+    "thinking_only": true
   }
 ]

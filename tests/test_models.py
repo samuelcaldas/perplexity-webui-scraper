@@ -6,7 +6,7 @@ from pydantic import ValidationError
 from pytest import mark, raises, warns
 
 from perplexity_webui_scraper import ModelRiskWarning, ModelStatusError
-from perplexity_webui_scraper.models.registry import MODELS, ModelRegistry
+from perplexity_webui_scraper.models.registry import MODELS, ModelRegistry, parse_thinking_modifier
 from perplexity_webui_scraper.models.types import Model
 
 
@@ -129,3 +129,79 @@ def test_dynamic_unregistered_model_fallback() -> None:
     assert model.identifier == "gpt-6.0"
     assert model.provider == "openai"
     assert model.status == "unknown"
+
+
+@mark.parametrize(
+    ("raw", "expected_base", "expected_thinking", "expected_effort"),
+    [
+        ("claude45haikuthinking", "claude45haiku", True, None),
+        ("kimik2thinking", "kimik2", True, None),
+        ("anthropic/claude-sonnet-5-thinking", "anthropic/claude-sonnet-5", True, None),
+        ("google/gemini-3.1-pro-thinking-high", "google/gemini-3.1-pro", True, "high"),
+        ("google/gemini-3.1-pro-thinking-low", "google/gemini-3.1-pro", True, "low"),
+        ("openai/gpt51-low-thinking", "openai/gpt51", True, "low"),
+        ("openai/gpt51-thinking-high", "openai/gpt51", True, "high"),
+        ("claude-3.7-sonnet-thinking-20250219", "claude-3.7-sonnet-20250219", True, None),
+        ("x-ai/grok4nonthinking", "x-ai/grok4", False, None),
+        ("x-ai/grok41nonreasoning", "x-ai/grok41", False, None),
+        ("x-ai/grok41reasoning", "x-ai/grok41", True, None),
+        ("openai/gpt-5.6-terra[1m]", "openai/gpt-5.6-terra", None, None),
+    ],
+)
+def test_parse_thinking_modifier(
+    raw: str,
+    expected_base: str,
+    expected_thinking: bool | None,
+    expected_effort: str | None,
+) -> None:
+    base, thinking, effort = parse_thinking_modifier(raw)
+    assert base == expected_base
+    assert thinking is expected_thinking
+    assert effort == expected_effort
+
+
+def test_thinking_only_model_resolution() -> None:
+    # Kimi K3 is thinking_only: true
+    model_k3 = MODELS.resolve_for_use("moonshot/kimi-k3")
+    assert model_k3.identifier == "kimik3thinking"
+    assert model_k3.thinking_only is True
+
+    # Deep research is thinking_only: true
+    model_dr = MODELS.resolve_for_use("perplexity/deep-research")
+    assert model_dr.identifier == "pplx_alpha"
+    assert model_dr.thinking_only is True
+
+
+def test_unseparated_thinking_suffix_resolution() -> None:
+    # claude45haikuthinking resolves to base claude45haiku with thinking identifier
+    with warns(ModelRiskWarning):
+        model_haiku = MODELS.resolve_for_use("claude45haikuthinking", allow_risky_model=True)
+    assert model_haiku.id == "anthropic/claude45haiku"
+    assert model_haiku.identifier == "claude45haikuthinking"
+
+    # kimik2thinking resolves to moonshot/kimik2
+    with warns(ModelRiskWarning):
+        model_k2 = MODELS.resolve_for_use("kimik2thinking", allow_risky_model=True)
+    assert model_k2.id == "moonshot/kimik2"
+    assert model_k2.identifier == "kimik2thinking"
+
+
+def test_mid_name_and_effort_thinking_resolution() -> None:
+    # gpt51-low-thinking resolves to gpt51 with thinking identifier
+    with warns(ModelRiskWarning):
+        model_gpt51 = MODELS.resolve_for_use("openai/gpt51-low-thinking", allow_risky_model=True)
+    assert model_gpt51.id == "openai/gpt51"
+    assert model_gpt51.identifier == "gpt51_thinking"
+
+    # gemini-3.1-pro-thinking-high resolves to gemini-3.1-pro with gemini31pro_high
+    model_gemini = MODELS.resolve_for_use("google/gemini-3.1-pro-thinking-high")
+    assert model_gemini.id == "google/gemini-3.1-pro"
+    assert model_gemini.identifier == "gemini31pro_high"
+
+
+def test_explicit_non_thinking_modifier_resolution() -> None:
+    # grok4nonthinking resolves to grok4 with base identifier
+    with warns(ModelRiskWarning):
+        model_grok = MODELS.resolve_for_use("x-ai/grok4nonthinking", allow_risky_model=True)
+    assert model_grok.id == "x-ai/grok4"
+    assert model_grok.identifier == "grok4nonthinking"

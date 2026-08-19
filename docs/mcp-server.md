@@ -119,55 +119,34 @@ Tools marked `[AVAILABLE]` can be called normally. `[UNKNOWN]` and `[UNAVAILABLE
 | `pplx_kimi_k26` | `moonshot/kimi-k2.6` | Kimi K2.6 | `false` | pro | `available` | 2026-08-05T23:32:49.769820Z |
 | `pplx_nemotron3_super` | `nvidia/nemotron-3-super` | Nemotron 3 Super | `false` | pro | `available` | 2026-08-05T23:32:55.399808Z |
 | `pplx_gpt54` | `openai/gpt-5.4` | GPT-5.4 | `false` | pro | `unavailable` | 2026-08-16T00:00:00Z |
-| `pplx_gpt54_thinking` | `openai/gpt-5.4-thinking` | GPT-5.4 Thinking | `false` | pro | `unavailable` | 2026-08-16T00:00:00Z |
-| `pplx_gpt55_thinking` | `openai/gpt-5.5-thinking` | GPT-5.5 Thinking | `false` | max | `unavailable` | 2026-08-16T00:00:00Z |
 | `pplx_claude_o47` | `anthropic/claude-opus-4.7` | Claude Opus 4.7 | `false` | max | `unavailable` | 2026-08-16T00:00:00Z |
-| `pplx_claude_o47_think` | `anthropic/claude-opus-4.7-thinking` | Claude Opus 4.7 Thinking | `false` | max | `unavailable` | 2026-08-16T00:00:00Z |
 | `pplx_claude_s46` | `anthropic/claude-sonnet-4.6` | Claude Sonnet 4.6 | `false` | pro | `unavailable` | 2026-08-16T00:00:00Z |
-| `pplx_claude_s46_think` | `anthropic/claude-sonnet-4.6-thinking` | Claude Sonnet 4.6 Thinking | `false` | pro | `unavailable` | 2026-08-16T00:00:00Z |
 | `pplx_gpt4o` | `openai/gpt4o` | GPT-4o | `false` | unknown | `unavailable` | 2026-08-16T00:00:00Z |
 | `pplx_gpt41` | `openai/gpt41` | GPT-4.1 | `false` | unknown | `unavailable` | 2026-08-16T00:00:00Z |
 | `pplx_gpt5` | `openai/gpt5` | GPT-5 | `false` | unknown | `unavailable` | 2026-08-16T00:00:00Z |
-| `pplx_gpt5_thinking` | `openai/gpt5-thinking` | GPT-5 Thinking | `false` | unknown | `unavailable` | 2026-08-16T00:00:00Z |
 | `pplx_gpt51` | `openai/gpt51` | GPT-5.1 | `false` | unknown | `unavailable` | 2026-08-16T00:00:00Z |
-| `pplx_gpt51_thinking` | `openai/gpt51-thinking` | GPT-5.1 Thinking | `false` | unknown | `unavailable` | 2026-08-16T00:00:00Z |
-| `pplx_gpt51_low_thinking` | `openai/gpt51-low-thinking` | GPT-5.1 Low Thinking | `false` | unknown | `unavailable` | 2026-08-16T00:00:00Z |
 | `pplx_gpt5_mini` | `openai/gpt5-mini` | GPT-5 Mini | `false` | unknown | `unavailable` | 2026-08-16T00:00:00Z |
 | `pplx_gpt5_nano` | `openai/gpt5-nano` | GPT-5 Nano | `false` | unknown | `unavailable` | 2026-08-16T00:00:00Z |
 | `pplx_gpt5_pro` | `openai/gpt5-pro` | GPT-5 Pro | `false` | unknown | `unavailable` | 2026-08-16T00:00:00Z |
 | `pplx_gpt52` | `openai/gpt52` | GPT-5.2 | `false` | unknown | `unavailable` | 2026-08-16T00:00:00Z |
-| `pplx_gpt52_thinking` | `openai/gpt52-thinking` | GPT-5.2 Thinking | `false` | unknown | `unavailable` | 2026-08-16T00:00:00Z |
 | `pplx_gpt52_pro` | `openai/gpt52-pro` | GPT-5.2 Pro | `false` | unknown | `unavailable` | 2026-08-16T00:00:00Z |
 | `pplx_gpt55` | `openai/gpt55` | GPT-5.5 | `false` | unknown | `unavailable` | 2026-08-16T00:00:00Z |
 | `pplx_claude2` | `anthropic/claude2` | Claude Sonnet 4.0 | `false` | unknown | `unavailable` | 2026-08-16T00:00:00Z |
-| `pplx_claude37sonnetthinking` | `anthropic/claude37sonnetthinking` | Claude Sonnet 4.0 Thinking | `false` | unknown | `unavailable` | 2026-08-16T00:00:00Z |
-| `pplx_claude40sonnetthinking` | `anthropic/claude40sonnetthinking` | Claude Sonnet 4.0 Thinking | `false` | unknown | `unavailable` | 2026-08-16T00:00:00Z |
 | `pplx_gemini25pro` | `google/gemini25pro` | Gemini 2.5 Pro | `false` | unknown | `unavailable` | 2026-08-16T00:00:00Z |
 | `pplx_gemini30pro` | `google/gemini30pro` | Gemini 3 Pro | `false` | unknown | `unavailable` | 2026-08-16T00:00:00Z |
 | `pplx_gemini30flash` | `google/gemini30flash` | Gemini 3 Flash | `false` | unknown | `unavailable` | 2026-08-16T00:00:00Z |
-| `pplx_gemini30flash_high` | `google/gemini30flash-high` | Gemini 3 Flash Thinking | `false` | unknown | `unavailable` | 2026-08-16T00:00:00Z |
 | `pplx_gemini35flash` | `google/gemini35flash` | Gemini 3.5 Flash | `false` | unknown | `unavailable` | 2026-08-16T00:00:00Z |
-| `pplx_gemini35flash_medium` | `google/gemini35flash-medium` | Gemini 3.5 Flash Medium Thinking | `false` | unknown | `unavailable` | 2026-08-16T00:00:00Z |
-| `pplx_gemini35flash_high` | `google/gemini35flash-high` | Gemini 3.5 Flash Thinking | `false` | unknown | `unavailable` | 2026-08-16T00:00:00Z |
 | `pplx_grok` | `x-ai/grok` | Grok 3 Beta | `false` | unknown | `unavailable` | 2026-08-16T00:00:00Z |
 | `pplx_claude40opus` | `anthropic/claude40opus` | Claude Opus 4.0 | `false` | unknown | `unavailable` | 2026-08-16T00:00:00Z |
-| `pplx_claude40opusthinking` | `anthropic/claude40opusthinking` | Claude Opus 4.0 Thinking | `false` | unknown | `unavailable` | 2026-08-16T00:00:00Z |
 | `pplx_claude41opus` | `anthropic/claude41opus` | Claude Opus 4.1 | `false` | unknown | `unavailable` | 2026-08-16T00:00:00Z |
-| `pplx_claude41opusthinking` | `anthropic/claude41opusthinking` | Claude Opus 4.1 Thinking | `false` | unknown | `unavailable` | 2026-08-16T00:00:00Z |
 | `pplx_claude45opus` | `anthropic/claude45opus` | Claude Opus 4.5 | `false` | unknown | `unavailable` | 2026-08-16T00:00:00Z |
-| `pplx_claude45opusthinking` | `anthropic/claude45opusthinking` | Claude Opus 4.5 Thinking | `false` | unknown | `unavailable` | 2026-08-16T00:00:00Z |
 | `pplx_claude46opus` | `anthropic/claude46opus` | Claude Opus 4.6 | `false` | unknown | `unavailable` | 2026-08-16T00:00:00Z |
-| `pplx_claude46opusthinking` | `anthropic/claude46opusthinking` | Claude Opus 4.6 Thinking | `false` | unknown | `unavailable` | 2026-08-16T00:00:00Z |
 | `pplx_claude45sonnet` | `anthropic/claude45sonnet` | Claude Sonnet 4.5 | `false` | unknown | `unavailable` | 2026-08-16T00:00:00Z |
-| `pplx_claude45sonnetthinking` | `anthropic/claude45sonnetthinking` | Claude Sonnet 4.5 Thinking | `false` | unknown | `unavailable` | 2026-08-16T00:00:00Z |
 | `pplx_claude45haiku` | `anthropic/claude45haiku` | Claude Haiku 4.5 | `false` | unknown | `unavailable` | 2026-08-16T00:00:00Z |
-| `pplx_claude45haikuthinking` | `anthropic/claude45haikuthinking` | Claude Haiku 4.5 Thinking | `false` | unknown | `unavailable` | 2026-08-16T00:00:00Z |
-| `pplx_kimik2thinking` | `moonshot/kimik2thinking` | Kimi K2 | `false` | unknown | `unavailable` | 2026-08-16T00:00:00Z |
-| `pplx_kimik25thinking` | `moonshot/kimik25thinking` | Kimi K2.5 Thinking | `false` | unknown | `unavailable` | 2026-08-16T00:00:00Z |
+| `pplx_kimik2` | `moonshot/kimik2` | Kimi K2 | `false` | unknown | `unavailable` | 2026-08-16T00:00:00Z |
+| `pplx_kimik25` | `moonshot/kimik25` | Kimi K2.5 | `false` | unknown | `unavailable` | 2026-08-16T00:00:00Z |
 | `pplx_grok4` | `x-ai/grok4` | Grok 4 | `false` | unknown | `unavailable` | 2026-08-16T00:00:00Z |
-| `pplx_grok4nonthinking` | `x-ai/grok4nonthinking` | Grok 4 | `false` | unknown | `unavailable` | 2026-08-16T00:00:00Z |
-| `pplx_grok41reasoning` | `x-ai/grok41reasoning` | Grok 4.1 | `false` | unknown | `unavailable` | 2026-08-16T00:00:00Z |
-| `pplx_grok41nonreasoning` | `x-ai/grok41nonreasoning` | Grok 4.1 | `false` | unknown | `unavailable` | 2026-08-16T00:00:00Z |
+| `pplx_grok41` | `x-ai/grok41` | Grok 4.1 | `false` | unknown | `unavailable` | 2026-08-16T00:00:00Z |
 | `pplx_o4mini` | `openai/o4mini` | o4-mini | `false` | unknown | `unavailable` | 2026-08-16T00:00:00Z |
 | `pplx_o3pro` | `openai/o3pro` | o3-pro | `false` | unknown | `unavailable` | 2026-08-16T00:00:00Z |
 

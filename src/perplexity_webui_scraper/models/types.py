@@ -57,6 +57,7 @@ class Model(BaseModel):
     identifier_by_tier: dict[ModelTier, str] = Field(default_factory=dict)
     thinking_identifier: str | None = None
     supports_thinking: bool = False
+    thinking_only: bool = False
     aliases: list[str] = Field(default_factory=list)
     tool_name: str
     provider: str

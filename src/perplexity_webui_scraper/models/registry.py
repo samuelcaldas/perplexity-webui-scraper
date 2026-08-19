@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from importlib.resources import files
-from re import fullmatch, sub
+from re import IGNORECASE, fullmatch, search, sub
 from warnings import warn
 
 from orjson import loads
@@ -14,6 +14,50 @@ from perplexity_webui_scraper.models.types import MODEL_STATUS_DESCRIPTIONS, Mod
 
 _CUSTOM_PREFIX = "custom:"
 _CUSTOM_IDENTIFIER_PATTERN = r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}"
+
+
+def _parse_non_thinking(clean: str) -> tuple[str, bool, None] | None:
+    """Detect explicit non-thinking or instant modifiers in model strings."""
+    m_non = search(r"[-_]?(non[-_]?thinking|non[-_]?reasoning|instant|direct)$", clean, IGNORECASE)
+    if m_non:
+        return clean[: m_non.start()], False, None
+
+    m_non_mid = search(r"[-_](non[-_]?thinking|non[-_]?reasoning)[-_]", clean, IGNORECASE)
+    if m_non_mid:
+        return clean[: m_non_mid.start()] + "-" + clean[m_non_mid.end() :], False, None
+
+    return None
+
+
+def parse_thinking_modifier(raw: str) -> tuple[str, bool | None, str | None]:
+    """Parse dynamic thinking and reasoning-effort modifiers from model strings.
+
+    Returns:
+        tuple of (base_model_candidate, wants_thinking, extracted_reasoning_effort)
+    """
+    clean = sub(r"\[.*?\]", "", raw).strip()
+
+    non_thinking = _parse_non_thinking(clean)
+    if non_thinking is not None:
+        return non_thinking
+
+    m_eff1 = search(r"[-_](thinking|reasoning)[-_](low|medium|high|minimal)$", clean, IGNORECASE)
+    if m_eff1:
+        return clean[: m_eff1.start()], True, m_eff1.group(2).lower()
+
+    m_eff2 = search(r"[-_](low|medium|high|minimal)[-_](thinking|reasoning)$", clean, IGNORECASE)
+    if m_eff2:
+        return clean[: m_eff2.start()], True, m_eff2.group(1).lower()
+
+    m_mid = search(r"[-_](thinking|reasoning)[-_]", clean, IGNORECASE)
+    if m_mid:
+        return clean[: m_mid.start()] + "-" + clean[m_mid.end() :], True, None
+
+    m_suf = search(r"[-_:]?(thinking|reasoning)$", clean, IGNORECASE)
+    if m_suf:
+        return clean[: m_suf.start()], True, None
+
+    return clean, None, None
 
 
 class ModelRegistry:
@@ -89,11 +133,14 @@ class ModelRegistry:
     def is_registered(self, model_id: str) -> bool:
         """Return whether model_id is present in registered models or aliases."""
         clean_id = sub(r"\[.*?\]", "", model_id).strip()
+        parsed_id, _, _ = parse_thinking_modifier(model_id)
         return (
             model_id in self._models
             or model_id in self._aliases
             or clean_id in self._models
             or clean_id in self._aliases
+            or parsed_id in self._models
+            or parsed_id in self._aliases
         )
 
     def resolve(self, model_id: str, *, fallback_dynamic: bool = False) -> Model:
@@ -110,8 +157,9 @@ class ModelRegistry:
             ValueError: If ``model_id`` is not registered and fallback_dynamic is False.
         """
         clean_id = sub(r"\[.*?\]", "", model_id).strip()
+        parsed_id, _, _ = parse_thinking_modifier(model_id)
 
-        for candidate in (model_id, clean_id):
+        for candidate in (model_id, clean_id, parsed_id):
             if candidate in self._models:
                 return self._models[candidate]
             if candidate in self._aliases:
@@ -181,13 +229,20 @@ class ModelRegistry:
             model = self.resolve(model_id, fallback_dynamic=allow_unregistered)
 
         # Handle thinking / reasoning_effort resolution
-        wants_thinking = (
-            thinking is True
-            or (reasoning_effort is not None and reasoning_effort.lower() in {"low", "medium", "high"})
-            or (model_id.endswith("-thinking") and model.thinking_identifier is not None)
-        )
-        if wants_thinking and model.thinking_identifier:
-            model = model.model_copy(update={"identifier": model.thinking_identifier})
+        _, extracted_thinking, extracted_effort = parse_thinking_modifier(model_id)
+        effective_effort = reasoning_effort or extracted_effort
+        effective_thinking = thinking if thinking is not None else extracted_thinking
+
+        if model.thinking_only:
+            if effective_thinking is not False and model.thinking_identifier:
+                model = model.model_copy(update={"identifier": model.thinking_identifier})
+        else:
+            wants_thinking = (
+                effective_thinking is True
+                or (effective_effort is not None and effective_effort.lower() in {"low", "medium", "high"})
+            )
+            if wants_thinking and model.thinking_identifier:
+                model = model.model_copy(update={"identifier": model.thinking_identifier})
 
         if model.status != "available" and not allow_risky_model:
             raise ModelStatusError(model.id, model.status, MODEL_STATUS_DESCRIPTIONS[model.status])

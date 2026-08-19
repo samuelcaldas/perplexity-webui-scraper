@@ -234,6 +234,13 @@ def test_openai_sdk_models_list_is_deduplicated(openai_client: OpenAI) -> None:
     assert "google/gemini-3.1-pro-thinking-high" not in model_ids
     assert "x-ai/grok-4.5" in model_ids
     assert "x-ai/grok-4.5-thinking" not in model_ids
+    assert "anthropic/claude45haikuthinking" not in model_ids
+    assert "moonshot/kimik2thinking" not in model_ids
+    assert "openai/gpt-5.4-thinking" not in model_ids
+    assert "openai/gpt51-thinking" not in model_ids
+    assert "openai/gpt51-low-thinking" not in model_ids
+    assert "anthropic/claude37sonnetthinking" not in model_ids
+    assert "x-ai/grok4nonthinking" not in model_ids
 
 
 @mark.parametrize("reasoning_effort", ["low", "medium", "high"])
@@ -280,3 +287,24 @@ def test_openai_sdk_legacy_thinking_alias_backward_compat(openai_client: OpenAI)
     provider.create_conversation.assert_called_once()
     config = provider.create_conversation.call_args[0][0]
     assert config.model == "anthropic/claude-sonnet-5-thinking"
+
+
+def test_openai_sdk_unseparated_thinking_and_mid_name_models(openai_client: OpenAI) -> None:
+    """Validate that unseparated and mid-name thinking models resolve correctly."""
+    conversation = _make_conversation("unseparated thinking answer")
+    provider = _make_provider(conversation)
+
+    with patch(
+        "perplexity_webui_scraper.api.routes.completions._client_pool.get_or_create",
+        return_value=provider,
+    ):
+        completion = openai_client.chat.completions.create(
+            model="claude45haikuthinking",
+            messages=[{"role": "user", "content": "Hello"}],
+            extra_body={"perplexity": {"allow_risky_model": True}},
+        )
+
+    assert completion.choices[0].message.content == "unseparated thinking answer"
+    provider.create_conversation.assert_called_once()
+    config = provider.create_conversation.call_args[0][0]
+    assert config.model == "claude45haikuthinking"
