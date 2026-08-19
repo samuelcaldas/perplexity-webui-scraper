@@ -383,7 +383,9 @@ async def _stream_response(
             if not has_response or response is None:
                 break
 
-            current = response.last_chunk or response.answer or ""
+            chunks = getattr(response, "chunks", None)
+            cumulative_chunks = "".join(chunks) if chunks else ""
+            current = response.answer or cumulative_chunks or response.last_chunk or ""
             if not current:
                 continue
 
@@ -405,7 +407,8 @@ async def _stream_response(
                     sentinel_started = True
                 elif not sentinel_started:
                     safe_len = len(current)
-                    for i in range(1, min(len(TOOL_CALL_SENTINEL_START), len(current)) + 1):
+                    max_check = min(len(TOOL_CALL_SENTINEL_START) - 1, len(current))
+                    for i in range(max_check, 0, -1):
                         if TOOL_CALL_SENTINEL_START.startswith(current[-i:]):
                             safe_len = len(current) - i
                             break

@@ -17,7 +17,9 @@ from perplexity_webui_scraper._internal.exceptions import (
 )
 from perplexity_webui_scraper.api.error_handling import error_response_for
 from perplexity_webui_scraper.api.routes.completions import router as completions_router
+from perplexity_webui_scraper.api.routes.messages import router as messages_router
 from perplexity_webui_scraper.api.routes.models import router as models_router
+from perplexity_webui_scraper.api.routes.responses import router as responses_router
 from perplexity_webui_scraper.api.schemas.errors import ErrorDetail, ErrorResponse
 
 
@@ -54,6 +56,8 @@ def create_app() -> FastAPI:
 
     application.include_router(models_router)
     application.include_router(completions_router)
+    application.include_router(responses_router)
+    application.include_router(messages_router)
 
     @application.exception_handler(HTTPException)
     async def _http_exception_handler(

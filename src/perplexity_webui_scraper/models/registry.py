@@ -237,9 +237,8 @@ class ModelRegistry:
             if effective_thinking is not False and model.thinking_identifier:
                 model = model.model_copy(update={"identifier": model.thinking_identifier})
         else:
-            wants_thinking = (
-                effective_thinking is True
-                or (effective_effort is not None and effective_effort.lower() in {"low", "medium", "high"})
+            wants_thinking = effective_thinking is True or (
+                effective_effort is not None and effective_effort.lower() in {"low", "medium", "high"}
             )
             if wants_thinking and model.thinking_identifier:
                 model = model.model_copy(update={"identifier": model.thinking_identifier})
