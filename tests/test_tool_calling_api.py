@@ -811,10 +811,12 @@ def test_build_tool_instruction_contains_environment_operating_rules_and_few_sho
     assert "5. MULTILINGUAL REFUSAL PROHIBITION:" in instruction
     assert "6. IMMEDIATE TOOL INVOCATION:" in instruction
     assert "7. OUTPUT FORMAT:" in instruction
+    assert "8. NO CONVERSATIONAL PROPOSALS OR CONFIRMATION OFFERS:" in instruction
     assert "<few_shot_examples>" in instruction
     assert "Example 1 (Direct Action Request" in instruction
     assert "Example 2 (Tool Capability Inquiry" in instruction
     assert "Example 3 (Tool Result Follow-up" in instruction
+    assert "Example 4 (Action / Connector Request" in instruction
     assert "<declared_tools>" in instruction
     assert '"name":"generate_image"' in instruction
     assert "<selection_rule>" in instruction

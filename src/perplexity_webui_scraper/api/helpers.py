@@ -52,9 +52,10 @@ def build_query_and_files(
         parts.append(
             "<harness_reminder>\n"
             "REMINDER: You have active tools declared in <declared_tools>. "
-            "If the user request requires an action, you MUST emit ONLY the tool sentinel "
+            "If the user request requires an action or mentions a tool task, you MUST emit ONLY the tool sentinel "
             f'{TOOL_CALL_SENTINEL_START}{{"arguments":{{...}},"name":"..."}}{TOOL_CALL_SENTINEL_END}. '
-            "DO NOT simulate execution in text, DO NOT make excuses about turns, and DO NOT disclaim capabilities.\n"
+            "DO NOT simulate execution in text, DO NOT ask for confirmation ('Confirme o que deseja fazer...'), "
+            "DO NOT offer options or proposals, and DO NOT make excuses about turns or disclaim capabilities.\n"
             "</harness_reminder>"
         )
 

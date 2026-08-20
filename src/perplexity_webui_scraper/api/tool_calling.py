@@ -82,11 +82,20 @@ def build_tool_instruction(tools: list[FunctionTool] | None, tool_choice: ToolCh
         "the tool call sentinel.\n"
         "7. OUTPUT FORMAT: When invoking a tool, emit ONLY the tool sentinel and NO conversational filler "
         "before or after.\n"
+        "8. NO CONVERSATIONAL PROPOSALS OR CONFIRMATION OFFERS: In ANY language, NEVER ask for confirmation, "
+        "NEVER offer to connect/list options instead of acting (e.g. 'Confirme o que deseja fazer com o conector...', "
+        "'Se quiser, conecto-a e executo ações...', 'Deseja que eu execute X?', 'Should I run the tool?'). "
+        "When the user's intent relates to a declared tool, DO NOT ask permission and DO NOT propose choices—"
+        "IMMEDIATELY emit the tool call sentinel.\n"
         "</system_environment>"
     )
 
     ex1_call = (
         f'{TOOL_CALL_SENTINEL_START}{{"arguments":{{"prompt":"montanha"}},"name":"generate_image"}}'
+        f"{TOOL_CALL_SENTINEL_END}"
+    )
+    ex4_call = (
+        f'{TOOL_CALL_SENTINEL_START}{{"arguments":{{"action":"get_balance"}},"name":"finance"}}'
         f"{TOOL_CALL_SENTINEL_END}"
     )
     few_shot_examples = (
@@ -100,7 +109,10 @@ def build_tool_instruction(tools: list[FunctionTool] | None, tool_choice: ToolCh
         "Posso executar as funções declaradas emitindo o protocolo de chamada.\n\n"
         "Example 3 (Tool Result Follow-up -> Answer naturally using returned tool data):\n"
         '[User]: [Tool Result for call_01 (read_file)]:\n{"status": "success", "content": "VERSION = 1.0.0"}\n'
-        "[Assistant]: O arquivo indica que a versão configurada é 1.0.0.\n"
+        "[Assistant]: O arquivo indica que a versão configurada é 1.0.0.\n\n"
+        "Example 4 (Action / Connector Request -> Sentinel ONLY, NO confirmation questions):\n"
+        "[User]: Conecte e consulte os saldos usando a ferramenta finance.\n"
+        f"[Assistant]: {ex4_call}\n"
         "</few_shot_examples>"
     )
 
