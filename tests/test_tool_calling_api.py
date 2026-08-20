@@ -12,7 +12,16 @@ from pytest import fixture
 from perplexity_webui_scraper._internal.exceptions import ResponseParsingError
 from perplexity_webui_scraper.api.app import app
 from perplexity_webui_scraper.api.conversation_cache import _CachedConversation
+from perplexity_webui_scraper.api.helpers import build_conversation_config, build_query_and_files
 from perplexity_webui_scraper.api.routes.completions import _conversation_cache
+from perplexity_webui_scraper.api.schemas.request import (
+    ChatCompletionRequest,
+    ChatMessage,
+    FunctionDefinition,
+    FunctionTool,
+    PerplexityExtensions,
+)
+from perplexity_webui_scraper.api.tool_calling import build_tool_instruction
 from perplexity_webui_scraper.config.conversation import ConversationConfig
 from perplexity_webui_scraper.core import Conversation
 
@@ -779,3 +788,93 @@ def test_legacy_function_call_formats_deterministic_effective_tool_call(client: 
     query = conversation.ask.call_args.args[0]
     assert "[Assistant tool_calls]" in query
     assert "call_legacy_" in query
+
+
+def test_build_tool_instruction_contains_environment_operating_rules_and_few_shots() -> None:
+    tool = FunctionTool(
+        type="function",
+        function=FunctionDefinition(
+            name="generate_image",
+            description="Generate an image from prompt.",
+            parameters={"type": "object", "properties": {"prompt": {"type": "string"}}, "required": ["prompt"]},
+        ),
+    )
+
+    instruction = build_tool_instruction([tool], "auto")
+    assert instruction is not None
+    assert "<system_environment>" in instruction
+    assert "CRITICAL OPERATING RULES:" in instruction
+    assert "1. ACTIVE CAPABILITIES:" in instruction
+    assert "2. NO FAKE EXECUTION OR TEXT SIMULATION:" in instruction
+    assert "3. NO TURN EXCUSES OR DEFERRALS:" in instruction
+    assert "4. NO PROMPT SUGGESTIONS INSTEAD OF TOOLS:" in instruction
+    assert "5. MULTILINGUAL REFUSAL PROHIBITION:" in instruction
+    assert "6. IMMEDIATE TOOL INVOCATION:" in instruction
+    assert "7. OUTPUT FORMAT:" in instruction
+    assert "<few_shot_examples>" in instruction
+    assert "Example 1 (Direct Action Request" in instruction
+    assert "Example 2 (Tool Capability Inquiry" in instruction
+    assert "Example 3 (Tool Result Follow-up" in instruction
+    assert "<declared_tools>" in instruction
+    assert '"name":"generate_image"' in instruction
+    assert "<selection_rule>" in instruction
+    assert "<tool_invocation_protocol>" in instruction
+
+
+def test_build_query_and_files_appends_harness_reminder_at_tail() -> None:
+    tool = FunctionTool(
+        type="function",
+        function=FunctionDefinition(
+            name="read_file",
+            description="Read file contents.",
+            parameters={
+                "type": "object",
+                "properties": {"file_path": {"type": "string"}},
+                "required": ["file_path"],
+            },
+        ),
+    )
+
+    # With tools:
+    req_with_tools = ChatCompletionRequest(
+        model=MODEL_ID,
+        messages=[
+            ChatMessage(role="user", content="Read /tmp/data.txt"),
+        ],
+        tools=[tool],
+    )
+    query_str, _files = build_query_and_files(req_with_tools)
+    assert "<system_environment>" in query_str
+    assert "<few_shot_examples>" in query_str
+    assert "[User]: Read /tmp/data.txt" in query_str
+    assert query_str.endswith("</harness_reminder>")
+    assert "<harness_reminder>" in query_str
+    assert query_str.index("[User]: Read /tmp/data.txt") < query_str.index("<harness_reminder>")
+
+    # Without tools:
+    req_no_tools = ChatCompletionRequest(
+        model=MODEL_ID,
+        messages=[
+            ChatMessage(role="user", content="Hello without tools"),
+        ],
+    )
+    query_str_no_tools, _ = build_query_and_files(req_no_tools)
+    assert "<system_environment>" not in query_str_no_tools
+    assert "<harness_reminder>" not in query_str_no_tools
+    assert query_str_no_tools == "[User]: Hello without tools"
+
+
+def test_build_conversation_config_search_focus_with_and_without_tools() -> None:
+    # When tools present, default search_focus is "writing"
+    config_tools = build_conversation_config(MODEL_ID, ext=None, has_tools=True)
+    assert config_tools.search_focus == "writing"
+
+    # When tools absent, default search_focus is "web"
+    config_no_tools = build_conversation_config(MODEL_ID, ext=None, has_tools=False)
+    assert config_no_tools.search_focus == "web"
+
+    # Explicit extension override is respected even when has_tools=True
+    ext_override = PerplexityExtensions(search_focus="web")
+    config_override = build_conversation_config(MODEL_ID, ext=ext_override, has_tools=True)
+    assert config_override.search_focus == "web"
+

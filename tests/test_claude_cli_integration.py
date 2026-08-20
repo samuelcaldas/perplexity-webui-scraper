@@ -499,3 +499,34 @@ def test_claude_cli_unprefixed_and_bracketed_model_resolution(
 
     assert response.choices[0].message.content == f"Answer from {model_candidate}"
     assert response.model == model_candidate
+
+
+def test_claude_cli_prompt_contains_all_anti_refusal_and_tail_reminders(openai_client: OpenAI) -> None:
+    """Verify that Claude CLI request dispatches prompt containing environment, few-shots, and tail reminder."""
+    tool_answer = _tool_call_answer("Read", {"file_path": "server.py"})
+    conversation = _make_conversation(tool_answer)
+    provider = _make_provider(conversation)
+
+    model = os.environ["ANTHROPIC_DEFAULT_FABLE_MODEL"]
+
+    with patch(
+        "perplexity_webui_scraper.api.routes.completions._client_pool.get_or_create",
+        return_value=provider,
+    ):
+        openai_client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": "Read server.py and fix the port"}],
+            tools=CLAUDE_CODING_TOOLS,
+        )
+
+    query = conversation.ask.call_args.args[0]
+    assert "<system_environment>" in query
+    assert "CRITICAL OPERATING RULES:" in query
+    assert "MULTILINGUAL REFUSAL PROHIBITION:" in query
+    assert "<few_shot_examples>" in query
+    assert "<declared_tools>" in query
+    assert "<harness_reminder>" in query
+    assert query.endswith("</harness_reminder>")
+    assert "[User]: Read server.py and fix the port" in query
+    assert query.index("[User]: Read server.py") < query.index("<harness_reminder>")
+

@@ -6,7 +6,11 @@ from base64 import b64encode
 import json
 from typing import TYPE_CHECKING
 
-from perplexity_webui_scraper.api.tool_calling import build_tool_instruction
+from perplexity_webui_scraper.api.tool_calling import (
+    TOOL_CALL_SENTINEL_END,
+    TOOL_CALL_SENTINEL_START,
+    build_tool_instruction,
+)
 from perplexity_webui_scraper.config.conversation import ConversationConfig
 from perplexity_webui_scraper.core.response import Coordinates
 from perplexity_webui_scraper.models.registry import MODELS
@@ -43,6 +47,16 @@ def build_query_and_files(
             parts.append(formatted_message)
 
         files.extend(message.image_bytes())
+
+    if tool_instruction is not None:
+        parts.append(
+            "<harness_reminder>\n"
+            "REMINDER: You have active tools declared in <declared_tools>. "
+            "If the user request requires an action, you MUST emit ONLY the tool sentinel "
+            f'{TOOL_CALL_SENTINEL_START}{{"arguments":{{...}},"name":"..."}}{TOOL_CALL_SENTINEL_END}. '
+            "DO NOT simulate execution in text, DO NOT make excuses about turns, and DO NOT disclaim capabilities.\n"
+            "</harness_reminder>"
+        )
 
     return "\n\n".join(parts), files
 
@@ -152,6 +166,8 @@ def _format_tool_result(tool_call_id: str, content: str) -> str:
 def _format_message(message: ChatMessage) -> str:
     """Format one validated message without changing its relative position."""
     text = message.text()
+    if not text and message.refusal:
+        text = f"[Refusal]: {message.refusal}"
 
     if message.role == "tool":
         return _format_tool_result(message.tool_call_id or "", text)

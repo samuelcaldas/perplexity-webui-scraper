@@ -85,11 +85,31 @@ def build_tool_instruction(tools: list[FunctionTool] | None, tool_choice: ToolCh
         "</system_environment>"
     )
 
+    ex1_call = (
+        f'{TOOL_CALL_SENTINEL_START}{{"arguments":{{"prompt":"montanha"}},"name":"generate_image"}}'
+        f"{TOOL_CALL_SENTINEL_END}"
+    )
+    few_shot_examples = (
+        "<few_shot_examples>\n"
+        "Example 1 (Direct Action Request -> Sentinel ONLY, NO prose or prompt suggestions):\n"
+        "[User]: Gere uma imagem de uma paisagem de montanha ao amanhecer.\n"
+        f"[Assistant]: {ex1_call}\n\n"
+        "Example 2 (Tool Capability Inquiry -> List declared tools, NEVER disclaim access):\n"
+        "[User]: Quais ferramentas você tem acesso nesta sessão?\n"
+        "[Assistant]: Tenho acesso às ferramentas declaradas nesta sessão (veja <declared_tools>). "
+        "Posso executar as funções declaradas emitindo o protocolo de chamada.\n\n"
+        "Example 3 (Tool Result Follow-up -> Answer naturally using returned tool data):\n"
+        '[User]: [Tool Result for call_01 (read_file)]:\n{"status": "success", "content": "VERSION = 1.0.0"}\n'
+        "[Assistant]: O arquivo indica que a versão configurada é 1.0.0.\n"
+        "</few_shot_examples>"
+    )
+
     return (
         f"[OPENAI_TOOL_INSTRUCTIONS]\n"
         f"{environment_text}\n\n"
         f"<declared_tools>\n{serialized_specs}\n</declared_tools>\n\n"
         f"<selection_rule>\n{selection}\n</selection_rule>\n\n"
+        f"{few_shot_examples}\n\n"
         f"<tool_invocation_protocol>\n"
         f"To call a tool, emit exactly one complete sentinel and no other text:\n"
         f'{TOOL_CALL_SENTINEL_START}{{"arguments":{{}},"name":"function_name"}}{TOOL_CALL_SENTINEL_END}\n'
