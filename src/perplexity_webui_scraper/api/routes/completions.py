@@ -37,7 +37,7 @@ from perplexity_webui_scraper.api.schemas.response import (
 from perplexity_webui_scraper.api.tool_calling import (
     TOOL_CALL_SENTINEL_START,
     EmulatedToolCall,
-    parse_emulated_tool_call,
+    parse_emulated_tool_calls,
     requires_tool_call,
     serialize_tool_arguments,
 )
@@ -185,6 +185,7 @@ async def _prepare_conversation(
         request.perplexity,
         reasoning_effort=request.reasoning_effort,
         thinking=request.thinking,
+        has_tools=bool(request.tools),
     )
     conversation = await to_thread.run_sync(client.create_conversation, config)
     return conversation, query, files
@@ -236,6 +237,7 @@ def _config_fingerprint(request: ChatCompletionRequest) -> str:
         request.perplexity,
         reasoning_effort=request.reasoning_effort,
         thinking=request.thinking,
+        has_tools=bool(request.tools),
     )
     return json.dumps(config.model_dump(mode="json"), separators=(",", ":"), sort_keys=True)
 
@@ -280,20 +282,29 @@ def _validate_pending_tool_calls(request: ChatCompletionRequest, cached: _Cached
         raise HTTPException(status_code=400, detail="Continuation does not match cached pending tool call.")
 
 
-def _pending_tool_call_metadata(
-    emulated_tool_call: EmulatedToolCall | None,
+def _pending_tool_calls_metadata(
+    emulated_tool_calls: list[EmulatedToolCall] | None,
 ) -> tuple[dict[str, str], ...] | None:
-    """Convert validated provider call into cacheable continuation metadata."""
-    if emulated_tool_call is None:
+    """Convert validated provider calls into cacheable continuation metadata."""
+    if not emulated_tool_calls:
         return None
-    call = emulated_tool_call
-    return (
+    return tuple(
         {
             "id": call.call_id,
             "name": call.function_name,
             "arguments": serialize_tool_arguments(call.arguments),
-        },
+        }
+        for call in emulated_tool_calls
     )
+
+
+def _pending_tool_call_metadata(
+    emulated_tool_call: EmulatedToolCall | None,
+) -> tuple[dict[str, str], ...] | None:
+    """Convert single validated provider call into cacheable continuation metadata."""
+    if emulated_tool_call is None:
+        return None
+    return _pending_tool_calls_metadata([emulated_tool_call])
 
 
 async def _build_completion_response(
@@ -303,21 +314,22 @@ async def _build_completion_response(
 ) -> JSONResponse:
     """Build and cache a completed non-streaming response."""
     answer = conversation.answer or ""
-    emulated_tool_call = parse_emulated_tool_call(answer, request.tools, request.tool_choice)
-    if requires_tool_call(request.tools, request.tool_choice) and emulated_tool_call is None:
+    emulated_tool_calls = parse_emulated_tool_calls(answer, request.tools, request.tool_choice)
+    if requires_tool_call(request.tools, request.tool_choice) and not emulated_tool_calls:
         raise HTTPException(status_code=400, detail="Provider response did not contain a valid required tool call.")
 
     response_tool_calls = None
 
-    if emulated_tool_call is not None:
+    if emulated_tool_calls:
         response_tool_calls = [
             ChatCompletionToolCall(
-                id=emulated_tool_call.call_id,
+                id=call.call_id,
                 function=ChatCompletionToolCallFunction(
-                    name=emulated_tool_call.function_name,
-                    arguments=serialize_tool_arguments(emulated_tool_call.arguments),
+                    name=call.function_name,
+                    arguments=serialize_tool_arguments(call.arguments),
                 ),
             )
+            for call in emulated_tool_calls
         ]
 
     conv_uuid = conversation.uuid
@@ -327,7 +339,7 @@ async def _build_completion_response(
                 token,
                 conv_uuid,
                 conversation,
-                pending_tool_calls=_pending_tool_call_metadata(emulated_tool_call),
+                pending_tool_calls=_pending_tool_calls_metadata(emulated_tool_calls),
                 config_fingerprint=_config_fingerprint(request),
             )
 
@@ -434,11 +446,11 @@ async def _stream_response(
                     ).to_sse_line()
 
         conv_uuid = conversation.uuid
-        emulated_tool_call: EmulatedToolCall | None = None
+        emulated_tool_calls: list[EmulatedToolCall] | None = None
 
         if has_tools:
-            emulated_tool_call = parse_emulated_tool_call(last_content, req_tools, req_tool_choice)
-            if requires_tool_call(req_tools, req_tool_choice) and emulated_tool_call is None:
+            emulated_tool_calls = parse_emulated_tool_calls(last_content, req_tools, req_tool_choice)
+            if requires_tool_call(req_tools, req_tool_choice) and not emulated_tool_calls:
                 error_payload = {
                     "error": {
                         "message": "Provider response did not contain a valid required tool call.",
@@ -449,7 +461,7 @@ async def _stream_response(
                 yield f"event: error\ndata: {json.dumps(error_payload)}\n\n"
                 return
 
-        pending_tool_calls = _pending_tool_call_metadata(emulated_tool_call)
+        pending_tool_calls = _pending_tool_calls_metadata(emulated_tool_calls)
         if conv_uuid:
             async with _conversation_cache.lock:
                 _conversation_cache.set(
@@ -462,29 +474,30 @@ async def _stream_response(
 
         pplx_ext = PerplexityResponseExtensions(thread_uuid=conv_uuid) if conv_uuid else None
 
-        if emulated_tool_call is not None:
-            yield ChatCompletionChunk(
-                id=completion_id,
-                created=created,
-                model=model_id,
-                choices=[
-                    ChatCompletionChunkChoice(
-                        delta=ChatCompletionChunkDelta(
-                            tool_calls=[
-                                ChatCompletionChunkDeltaToolCall(
-                                    index=0,
-                                    id=emulated_tool_call.call_id,
-                                    type="function",
-                                    function=ChatCompletionChunkDeltaFunction(
-                                        name=emulated_tool_call.function_name,
-                                        arguments=serialize_tool_arguments(emulated_tool_call.arguments),
-                                    ),
-                                )
-                            ]
+        if emulated_tool_calls:
+            for idx, call in enumerate(emulated_tool_calls):
+                yield ChatCompletionChunk(
+                    id=completion_id,
+                    created=created,
+                    model=model_id,
+                    choices=[
+                        ChatCompletionChunkChoice(
+                            delta=ChatCompletionChunkDelta(
+                                tool_calls=[
+                                    ChatCompletionChunkDeltaToolCall(
+                                        index=idx,
+                                        id=call.call_id,
+                                        type="function",
+                                        function=ChatCompletionChunkDeltaFunction(
+                                            name=call.function_name,
+                                            arguments=serialize_tool_arguments(call.arguments),
+                                        ),
+                                    )
+                                ]
+                            )
                         )
-                    )
-                ],
-            ).to_sse_line()
+                    ],
+                ).to_sse_line()
             yield ChatCompletionChunk(
                 id=completion_id,
                 created=created,

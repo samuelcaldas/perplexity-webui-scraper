@@ -21,16 +21,28 @@ from perplexity_webui_scraper.api.helpers import (
     build_conversation_config,
     build_query_and_files,
 )
-from perplexity_webui_scraper.api.routes.completions import _config_fingerprint, _conversation_cache, _validate_model
+from perplexity_webui_scraper.api.routes.completions import (
+    _config_fingerprint,
+    _conversation_cache,
+    _pending_tool_calls_metadata,
+    _validate_model,
+)
 from perplexity_webui_scraper.api.schemas.request import (
+    AssistantToolCall,
     ChatCompletionRequest,
     ChatMessage,
+    ContentPartImageUrl,
+    ContentPartText,
+    ExplicitToolChoice,
     FunctionTool,
     PerplexityExtensions,
+    ToolCallFunction,
+    ToolChoice,
+    ToolChoiceFunction,
 )
 from perplexity_webui_scraper.api.tool_calling import (
     TOOL_CALL_SENTINEL_START,
-    parse_emulated_tool_call,
+    parse_emulated_tool_calls,
     requires_tool_call,
     serialize_tool_arguments,
 )
@@ -77,15 +89,90 @@ class ResponseApiRequest(BaseModel):
                 if isinstance(item, str):
                     messages.append(ChatMessage(role="user", content=item))
                 elif isinstance(item, dict):
-                    role_raw = item.get("role", "user")
-                    role: Literal["system", "developer", "user", "assistant", "tool"] = (
-                        role_raw if role_raw in {"system", "developer", "user", "assistant", "tool"} else "user"
-                    )
-                    content = item.get("content", "")
-                    messages.append(ChatMessage(role=role, content=content))
+                    item_type = item.get("type")
+                    if item_type == "function_call":
+                        call_id = str(item.get("call_id", item.get("id", f"call_{uuid4().hex[:16]}")))
+                        name = str(item.get("name", ""))
+                        raw_args = item.get("arguments", "{}")
+                        args_str = (
+                            json.dumps(raw_args, ensure_ascii=False)
+                            if isinstance(raw_args, dict)
+                            else str(raw_args)
+                        )
+                        messages.append(
+                            ChatMessage(
+                                role="assistant",
+                                content=None,
+                                tool_calls=[
+                                    AssistantToolCall(
+                                        id=call_id,
+                                        type="function",
+                                        function=ToolCallFunction(name=name, arguments=args_str),
+                                    )
+                                ],
+                            )
+                        )
+                    elif item_type == "function_call_output":
+                        call_id = str(item.get("call_id", ""))
+                        output = item.get("output", "")
+                        out_str = json.dumps(output, ensure_ascii=False) if isinstance(output, dict) else str(output)
+                        messages.append(
+                            ChatMessage(
+                                role="tool",
+                                tool_call_id=call_id,
+                                content=out_str,
+                            )
+                        )
+                    elif item_type == "message":
+                        role_raw = str(item.get("role", "user"))
+                        role: Literal["system", "developer", "user", "assistant", "tool"] = (
+                            role_raw if role_raw in {"system", "developer", "user", "assistant", "tool"} else "user"
+                        )
+                        content = item.get("content", "")
+                        if isinstance(content, str):
+                            messages.append(ChatMessage(role=role, content=content))
+                        elif isinstance(content, list):
+                            parts: list[ContentPartText | ContentPartImageUrl] = []
+                            for part in content:
+                                if not isinstance(part, dict):
+                                    continue
+                                p_type = part.get("type")
+                                if p_type in {"text", "input_text"}:
+                                    parts.append(ContentPartText(type="text", text=str(part.get("text", ""))))
+                                elif p_type in {"image_url", "input_image"}:
+                                    img_url = part.get("image_url", part.get("url", ""))
+                                    if isinstance(img_url, dict):
+                                        img_url = img_url.get("url", "")
+                                    parts.append(ContentPartImageUrl(type="image_url", image_url={"url": str(img_url)}))
+                            messages.append(ChatMessage(role=role, content=parts))
+                    else:
+                        role_raw = str(item.get("role", "user"))
+                        role = role_raw if role_raw in {"system", "developer", "user", "assistant", "tool"} else "user"
+                        content = item.get("content", "")
+                        messages.append(ChatMessage(role=role, content=content))
 
         if not messages:
             messages.append(ChatMessage(role="user", content=""))
+
+        mapped_tool_choice: ToolChoice | None = None
+        if isinstance(self.tool_choice, dict):
+            tc_type = self.tool_choice.get("type")
+            if tc_type == "auto":
+                mapped_tool_choice = "auto"
+            elif tc_type in {"required", "any"}:
+                mapped_tool_choice = "required"
+            elif tc_type == "none":
+                mapped_tool_choice = "none"
+            elif tc_type == "function" and self.tool_choice.get("function", {}).get("name"):
+                mapped_tool_choice = ExplicitToolChoice(
+                    type="function",
+                    function=ToolChoiceFunction(name=str(self.tool_choice["function"]["name"])),
+                )
+        elif isinstance(self.tool_choice, str):
+            if self.tool_choice in {"auto", "required", "none"}:
+                mapped_tool_choice = self.tool_choice
+            elif self.tool_choice == "any":
+                mapped_tool_choice = "required"
 
         return ChatCompletionRequest(
             model=self.model,
@@ -94,7 +181,7 @@ class ResponseApiRequest(BaseModel):
             reasoning_effort=self.reasoning_effort,
             thinking=self.thinking,
             tools=self.tools,
-            tool_choice=self.tool_choice,
+            tool_choice=mapped_tool_choice,
             perplexity=self.perplexity,
         )
 
@@ -131,6 +218,7 @@ async def responses_endpoint(
             request.perplexity,
             reasoning_effort=request.reasoning_effort,
             thinking=request.thinking,
+            has_tools=bool(request.tools),
         )
         conversation = await to_thread.run_sync(client.create_conversation, config)
 
@@ -178,21 +266,39 @@ def _build_responses_payload(
     resp_id = f"resp_{uuid4().hex}"
     created_at = int(time())
 
-    emulated_tool_call = parse_emulated_tool_call(answer, request.tools, request.tool_choice)
-    if requires_tool_call(request.tools, request.tool_choice) and emulated_tool_call is None:
+    emulated_tool_calls = parse_emulated_tool_calls(answer, request.tools, request.tool_choice)
+    if requires_tool_call(request.tools, request.tool_choice) and not emulated_tool_calls:
         raise HTTPException(status_code=400, detail="Provider response did not contain a valid required tool call.")
 
     output: list[dict[str, Any]] = []
 
-    if emulated_tool_call is not None:
-        output.append(
+    if emulated_tool_calls:
+        first_sentinel_pos = answer.find(TOOL_CALL_SENTINEL_START)
+        if first_sentinel_pos > 0:
+            prefix_text = answer[:first_sentinel_pos].strip()
+            if prefix_text:
+                output.append(
+                    {
+                        "id": f"msg_{uuid4().hex[:16]}",
+                        "type": "message",
+                        "role": "assistant",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": prefix_text,
+                            }
+                        ],
+                    }
+                )
+        output.extend(
             {
-                "id": emulated_tool_call.call_id,
+                "id": call.call_id,
                 "type": "function_call",
-                "name": emulated_tool_call.function_name,
-                "arguments": serialize_tool_arguments(emulated_tool_call.arguments),
-                "call_id": emulated_tool_call.call_id,
+                "name": call.function_name,
+                "arguments": serialize_tool_arguments(call.arguments),
+                "call_id": call.call_id,
             }
+            for call in emulated_tool_calls
         )
     else:
         output.append(
@@ -211,10 +317,14 @@ def _build_responses_payload(
 
     conv_uuid = conversation.uuid
     if conv_uuid:
+        pending_metadata = None
+        if emulated_tool_calls:
+            pending_metadata = _pending_tool_calls_metadata(emulated_tool_calls)
         _conversation_cache.set(
             token,
             conv_uuid,
             conversation,
+            pending_tool_calls=pending_metadata,
             config_fingerprint=_config_fingerprint(request),
         )
 
@@ -255,6 +365,7 @@ async def _stream_responses_api(
     emitted_len = 0
     has_tools = bool(request.tools)
     model_id = request.model
+    output_index = 0
 
     try:
         iterator = iter(conversation)
@@ -313,18 +424,106 @@ async def _stream_responses_api(
                     yield f"event: response.text.delta\ndata: {json.dumps(delta_event)}\n\n"
 
         # Final delta flush if tools were active but no sentinel occurred
-        if has_tools and emitted_len < len(last_content):
+        if has_tools and not sentinel_started and emitted_len < len(last_content):
             remaining_delta = last_content[emitted_len:]
             if remaining_delta:
                 delta_event = {"delta": remaining_delta, "response_id": resp_id}
                 yield f"event: response.text.delta\ndata: {json.dumps(delta_event)}\n\n"
 
+        emulated_calls = (
+            parse_emulated_tool_calls(last_content, request.tools, request.tool_choice)
+            if has_tools
+            else None
+        )
+
+        output_items: list[dict[str, Any]] = []
+
+        if emulated_calls:
+            first_sentinel_pos = last_content.find(TOOL_CALL_SENTINEL_START)
+            if first_sentinel_pos > 0:
+                prefix_text = last_content[:first_sentinel_pos].strip()
+                if prefix_text:
+                    output_items.append(
+                        {
+                            "id": f"msg_{uuid4().hex[:16]}",
+                            "type": "message",
+                            "role": "assistant",
+                            "content": [{"type": "text", "text": prefix_text}],
+                        }
+                    )
+                    output_index += 1
+
+            for call in emulated_calls:
+                call_args = serialize_tool_arguments(call.arguments)
+                item_dict = {
+                    "id": call.call_id,
+                    "type": "function_call",
+                    "name": call.function_name,
+                    "arguments": call_args,
+                    "call_id": call.call_id,
+                }
+                output_items.append(item_dict)
+
+                item_added_event = {
+                    "type": "response.output_item.added",
+                    "response_id": resp_id,
+                    "output_index": output_index,
+                    "item": {
+                        "id": call.call_id,
+                        "type": "function_call",
+                        "name": call.function_name,
+                        "arguments": "",
+                        "call_id": call.call_id,
+                    },
+                }
+                yield f"event: response.output_item.added\ndata: {json.dumps(item_added_event)}\n\n"
+
+                arg_delta_event = {
+                    "type": "response.function_call_arguments.delta",
+                    "response_id": resp_id,
+                    "call_id": call.call_id,
+                    "output_index": output_index,
+                    "delta": call_args,
+                }
+                yield f"event: response.function_call_arguments.delta\ndata: {json.dumps(arg_delta_event)}\n\n"
+
+                arg_done_event = {
+                    "type": "response.function_call_arguments.done",
+                    "response_id": resp_id,
+                    "call_id": call.call_id,
+                    "output_index": output_index,
+                    "arguments": call_args,
+                }
+                yield f"event: response.function_call_arguments.done\ndata: {json.dumps(arg_done_event)}\n\n"
+
+                item_done_event = {
+                    "type": "response.output_item.done",
+                    "response_id": resp_id,
+                    "output_index": output_index,
+                    "item": item_dict,
+                }
+                yield f"event: response.output_item.done\ndata: {json.dumps(item_done_event)}\n\n"
+                output_index += 1
+        else:
+            output_items.append(
+                {
+                    "id": f"msg_{uuid4().hex[:16]}",
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": last_content}],
+                }
+            )
+
         conv_uuid = conversation.uuid
         if conv_uuid:
+            pending_metadata = None
+            if emulated_calls:
+                pending_metadata = _pending_tool_calls_metadata(emulated_calls)
             _conversation_cache.set(
                 token,
                 conv_uuid,
                 conversation,
+                pending_tool_calls=pending_metadata,
                 config_fingerprint=config_fingerprint,
             )
 
@@ -333,6 +532,7 @@ async def _stream_responses_api(
             "object": "response",
             "status": "completed",
             "model": model_id,
+            "output": output_items,
         }
         if conv_uuid:
             final_event["perplexity"] = {"thread_uuid": conv_uuid}

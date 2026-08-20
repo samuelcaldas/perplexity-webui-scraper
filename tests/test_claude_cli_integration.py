@@ -337,6 +337,64 @@ def test_claude_cli_streaming_tool_call_dispatch(openai_client: OpenAI) -> None:
     assert finish_chunk.choices[0].finish_reason == "tool_calls"
 
 
+def test_claude_coding_multi_tool_call_execution(openai_client: OpenAI) -> None:
+    """Verify multiple tool calls within a single response are parsed into tool_calls."""
+    multi_answer = (
+        _tool_call_answer("Read", {"file_path": "/app/a.py"})
+        + "\n"
+        + _tool_call_answer("Read", {"file_path": "/app/b.py"})
+    )
+    conversation = _make_conversation(multi_answer)
+    provider = _make_provider(conversation)
+
+    model = os.environ["ANTHROPIC_DEFAULT_FABLE_MODEL"]
+
+    with patch(
+        "perplexity_webui_scraper.api.routes.completions._client_pool.get_or_create",
+        return_value=provider,
+    ):
+        response = openai_client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": "Read /app/a.py and /app/b.py"}],
+            tools=CLAUDE_CODING_TOOLS,
+        )
+
+    choice = response.choices[0]
+    assert choice.finish_reason == "tool_calls"
+    assert choice.message.tool_calls is not None
+    assert len(choice.message.tool_calls) == 2
+    call1 = choice.message.tool_calls[0]
+    call2 = choice.message.tool_calls[1]
+    assert call1.type == "function"
+    assert call2.type == "function"
+    assert call1.function.name == "Read"
+    assert '"file_path":"/app/a.py"' in call1.function.arguments
+    assert call2.function.name == "Read"
+    assert '"file_path":"/app/b.py"' in call2.function.arguments
+
+
+def test_claude_coding_tool_defaults_to_writing_search_focus(openai_client: OpenAI) -> None:
+    """Verify tool requests default to writing search focus to prevent search persona interference."""
+    tool_answer = _tool_call_answer("Read", {"file_path": "main.py"})
+    conversation = _make_conversation(tool_answer)
+    provider = _make_provider(conversation)
+
+    model = os.environ["ANTHROPIC_DEFAULT_FABLE_MODEL"]
+
+    with patch(
+        "perplexity_webui_scraper.api.routes.completions._client_pool.get_or_create",
+        return_value=provider,
+    ):
+        openai_client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": "Read main.py"}],
+            tools=CLAUDE_CODING_TOOLS,
+        )
+
+    config = provider.create_conversation.call_args[0][0]
+    assert config.search_focus == "writing"
+
+
 def test_claude_cli_streaming_multi_turn_continuation(openai_client: OpenAI) -> None:
     """Verify multi-turn tool response continuation works in streaming mode."""
     # Step 1: Initial tool call

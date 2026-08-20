@@ -92,12 +92,14 @@ def build_conversation_config(
     ext: PerplexityExtensions | None,
     reasoning_effort: str | None = None,
     thinking: bool | None = None,
+    has_tools: bool = False,
 ) -> ConversationConfig:
     """Build a :class:`ConversationConfig` from a model ID and Perplexity extensions."""
     is_registered = getattr(MODELS, "is_registered", lambda m: False)(model)
     is_custom_or_dynamic = model.startswith("custom:") or not is_registered
     allow_risky = ext.allow_risky_model if (ext and ext.allow_risky_model is not None) else is_custom_or_dynamic
     effective_thinking = ext.thinking if (ext and ext.thinking is not None) else thinking
+    default_search_focus = "writing" if has_tools else "web"
 
     if ext is None:
         return ConversationConfig(
@@ -105,6 +107,7 @@ def build_conversation_config(
             allow_risky_model=allow_risky,
             reasoning_effort=reasoning_effort,
             thinking=effective_thinking,
+            search_focus=default_search_focus,
         )
 
     coordinates: Coordinates | None = None
@@ -120,7 +123,7 @@ def build_conversation_config(
         reasoning_effort=reasoning_effort,
         thinking=effective_thinking,
         citation_mode=ext.citation_mode or "clean",
-        search_focus=ext.search_focus or "web",
+        search_focus=ext.search_focus or default_search_focus,
         source_focus=ext.source_focus or "web",
         time_range=ext.time_range or "all",
         save_to_library=ext.save_to_library,

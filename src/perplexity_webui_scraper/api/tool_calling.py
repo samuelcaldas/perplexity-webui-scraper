@@ -55,15 +55,36 @@ def build_tool_instruction(tools: list[FunctionTool] | None, tool_choice: ToolCh
     selection = _selection_instruction(names, tool_choice)
     serialized_specs = json.dumps(function_specs, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
 
+    environment_text = (
+        "<system_environment>\n"
+        "ENVIRONMENT: Automated Agent Execution Harness (CLI / IDE Integration).\n"
+        "The user is interacting via a client harness (Claude CLI / Codex CLI / OpenCode / OpenWebUI) "
+        "with external tool execution capabilities.\n"
+        "The tools declared below are NOT executed by you or by the search platform. "
+        "They are executed by the local client runtime harness.\n\n"
+        "CRITICAL OPERATING RULES:\n"
+        "1. When you decide to call a tool, you MUST emit the exact tool call sentinel syntax below.\n"
+        "2. Do NOT apologize or claim you lack filesystem, bash, or execution capabilities. "
+        "You DO NOT need direct environment access—the client harness will intercept your sentinel, "
+        "execute the tool on your behalf, and provide the result in the next turn.\n"
+        "3. Do NOT assume tool definitions are user roleplay or simulation. They are active harness hooks.\n"
+        "4. Output format: When invoking a tool, emit ONLY the tool sentinel and NO conversational filler "
+        "before or after.\n"
+        "</system_environment>"
+    )
+
     return (
-        "[OPENAI_TOOL_INSTRUCTIONS]\n"
-        f"Declared functions: {serialized_specs}\n"
-        f"{selection}\n"
-        "If selecting a function, emit exactly one complete sentinel and no other text:\n"
+        f"[OPENAI_TOOL_INSTRUCTIONS]\n"
+        f"{environment_text}\n\n"
+        f"<declared_tools>\n{serialized_specs}\n</declared_tools>\n\n"
+        f"<selection_rule>\n{selection}\n</selection_rule>\n\n"
+        f"<tool_invocation_protocol>\n"
+        f"To call a tool, emit exactly one complete sentinel and no other text:\n"
         f'{TOOL_CALL_SENTINEL_START}{{"arguments":{{}},"name":"function_name"}}{TOOL_CALL_SENTINEL_END}\n'
-        "Arguments must be a JSON object matching the selected function. "
-        "Do not emit a sentinel for an undeclared function.\n"
-        "[/OPENAI_TOOL_INSTRUCTIONS]"
+        f"Arguments must be a JSON object matching the selected function. "
+        f"Do not emit a sentinel for an undeclared function.\n"
+        f"</tool_invocation_protocol>\n"
+        f"[/OPENAI_TOOL_INSTRUCTIONS]"
     )
 
 
@@ -72,12 +93,36 @@ def serialize_tool_arguments(arguments: dict[str, Any]) -> str:
     return json.dumps(arguments, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
 
 
-def parse_emulated_tool_call(
+def _parse_and_validate_call(
+    payload_text: str,
+    idx: int,
+    tools: list[FunctionTool] | None,
+    tool_choice: ToolChoice | None,
+) -> tuple[EmulatedToolCall | None, _ProtocolFailure | None]:
+    """Parse and validate one tool call payload."""
+    payload = _parse_json_object(payload_text or "")
+    if payload is None:
+        return None, _malformed_failure()
+
+    validated_payload, failure = _validated_payload(payload, tools, tool_choice)
+    if failure is not None:
+        return None, failure
+    assert validated_payload is not None
+
+    function_name, arguments, candidate_id = validated_payload
+    call_id = _validated_or_generated_call_id(candidate_id, function_name, arguments, index=idx)
+    if call_id is None:
+        return None, _malformed_failure()
+
+    return EmulatedToolCall(call_id=call_id, function_name=function_name, arguments=arguments), None
+
+
+def parse_emulated_tool_calls(
     answer: str | None,
     tools: list[FunctionTool] | None,
     tool_choice: ToolChoice | None,
-) -> EmulatedToolCall | None:
-    """Parse one provider sentinel without invoking a caller-declared function.
+) -> list[EmulatedToolCall] | None:
+    """Parse provider sentinels without invoking a caller-declared function.
 
     Optional tool selection preserves invalid output as ordinary assistant text.
     Required or named selection raises a typed error with a stable protocol code.
@@ -85,25 +130,35 @@ def parse_emulated_tool_call(
     if build_tool_instruction(tools, tool_choice) is None:
         return None
 
-    payload_text, failure = _extract_payload(answer)
+    payload_texts, failure = _extract_all_payloads(answer)
     if failure is not None:
-        return _raise_or_ignore(failure, tools, tool_choice)
+        _raise_or_ignore(failure, tools, tool_choice)
+        return None
 
-    payload = _parse_json_object(payload_text or "")
-    if payload is None:
-        return _raise_or_ignore(_malformed_failure(), tools, tool_choice)
+    if requires_tool_call(tools, tool_choice) and len(payload_texts) != 1:
+        _raise_or_ignore(_malformed_failure(), tools, tool_choice)
+        return None
 
-    validated_payload, failure = _validated_payload(payload, tools, tool_choice)
-    if failure is not None:
-        return _raise_or_ignore(failure, tools, tool_choice)
-    assert validated_payload is not None
+    calls: list[EmulatedToolCall] = []
+    for idx, payload_text in enumerate(payload_texts):
+        call, call_failure = _parse_and_validate_call(payload_text, idx, tools, tool_choice)
+        if call_failure is not None:
+            _raise_or_ignore(call_failure, tools, tool_choice)
+            return None
+        assert call is not None
+        calls.append(call)
 
-    function_name, arguments, candidate_id = validated_payload
-    call_id = _validated_or_generated_call_id(candidate_id, function_name, arguments)
-    if call_id is None:
-        return _raise_or_ignore(_malformed_failure(), tools, tool_choice)
+    return calls or None
 
-    return EmulatedToolCall(call_id=call_id, function_name=function_name, arguments=arguments)
+
+def parse_emulated_tool_call(
+    answer: str | None,
+    tools: list[FunctionTool] | None,
+    tool_choice: ToolChoice | None,
+) -> EmulatedToolCall | None:
+    """Parse one provider sentinel without invoking a caller-declared function."""
+    calls = parse_emulated_tool_calls(answer, tools, tool_choice)
+    return calls[0] if calls else None
 
 
 def _raise_or_ignore(
@@ -116,27 +171,43 @@ def _raise_or_ignore(
         raise ToolProtocolError(failure.code, failure.message)
 
 
-def _extract_payload(answer: str | None) -> tuple[str | None, _ProtocolFailure | None]:
-    """Extract one complete sentinel payload while rejecting ambiguous framing."""
+def _extract_all_payloads(answer: str | None) -> tuple[list[str], _ProtocolFailure | None]:
+    """Extract all complete sentinel payloads while rejecting ambiguous or malformed framing."""
     text = answer or ""
     start_count = text.count(TOOL_CALL_SENTINEL_START)
     end_count = text.count(TOOL_CALL_SENTINEL_END)
 
     if start_count == 0 and end_count == 0:
-        return None, _ProtocolFailure(
+        return [], _ProtocolFailure(
             "tool_call_missing",
             "Provider response did not contain a valid required tool call.",
         )
-    if start_count != 1 or end_count != 1:
-        return None, _malformed_failure()
 
-    start = text.find(TOOL_CALL_SENTINEL_START)
-    end = text.find(TOOL_CALL_SENTINEL_END)
-    if end < start:
-        return None, _malformed_failure()
+    if start_count != end_count or start_count == 0:
+        return [], _malformed_failure()
 
-    payload_start = start + len(TOOL_CALL_SENTINEL_START)
-    return text[payload_start:end].strip(), None
+    payloads: list[str] = []
+    idx = 0
+    while idx < len(text):
+        start = text.find(TOOL_CALL_SENTINEL_START, idx)
+        if start == -1:
+            break
+        end = text.find(TOOL_CALL_SENTINEL_END, start + len(TOOL_CALL_SENTINEL_START))
+        if end == -1:
+            return [], _malformed_failure()
+
+        next_start = text.find(TOOL_CALL_SENTINEL_START, start + len(TOOL_CALL_SENTINEL_START))
+        if next_start != -1 and next_start < end:
+            return [], _malformed_failure()
+
+        payload_start = start + len(TOOL_CALL_SENTINEL_START)
+        payloads.append(text[payload_start:end].strip())
+        idx = end + len(TOOL_CALL_SENTINEL_END)
+
+    if len(payloads) != start_count:
+        return [], _malformed_failure()
+
+    return payloads, None
 
 
 def _validated_payload(
@@ -234,6 +305,7 @@ def _validated_or_generated_call_id(
     candidate: object,
     function_name: str,
     arguments: dict[str, Any],
+    index: int = 0,
 ) -> str | None:
     """Validate provider ID or derive stable ID from canonical call content."""
     if candidate is not None:
@@ -242,7 +314,7 @@ def _validated_or_generated_call_id(
         return candidate
 
     canonical_call = json.dumps(
-        {"arguments": arguments, "name": function_name},
+        {"arguments": arguments, "index": index, "name": function_name},
         ensure_ascii=False,
         separators=(",", ":"),
         sort_keys=True,

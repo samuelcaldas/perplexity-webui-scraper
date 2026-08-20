@@ -20,20 +20,31 @@ from perplexity_webui_scraper.api.helpers import (
     build_conversation_config,
     build_query_and_files,
 )
-from perplexity_webui_scraper.api.routes.completions import _config_fingerprint, _conversation_cache, _validate_model
+from perplexity_webui_scraper.api.routes.completions import (
+    _config_fingerprint,
+    _conversation_cache,
+    _pending_tool_calls_metadata,
+    _validate_model,
+)
 from perplexity_webui_scraper.api.schemas.request import (
+    AssistantToolCall,
     ChatCompletionRequest,
     ChatMessage,
     ContentPartImageUrl,
     ContentPartText,
+    ExplicitToolChoice,
     FunctionDefinition,
     FunctionTool,
     PerplexityExtensions,
+    ToolCallFunction,
+    ToolChoice,
+    ToolChoiceFunction,
 )
 from perplexity_webui_scraper.api.tool_calling import (
     TOOL_CALL_SENTINEL_START,
-    parse_emulated_tool_call,
+    parse_emulated_tool_calls,
     requires_tool_call,
+    serialize_tool_arguments,
 )
 
 
@@ -86,33 +97,86 @@ class AnthropicMessageRequest(BaseModel):
 
         for msg in self.messages:
             role_raw = str(msg.get("role", "user"))
-            role: Literal["system", "developer", "user", "assistant", "tool"] = (
-                role_raw if role_raw in {"system", "developer", "user", "assistant", "tool"} else "user"
-            )
             content = msg.get("content")
 
             if isinstance(content, str):
+                role: Literal["system", "developer", "user", "assistant", "tool"] = (
+                    role_raw if role_raw in {"system", "developer", "user", "assistant", "tool"} else "user"
+                )
                 chat_messages.append(ChatMessage(role=role, content=content))
             elif isinstance(content, list):
-                parts: list[ContentPartText | ContentPartImageUrl] = []
-                for block in content:
-                    if not isinstance(block, dict):
-                        continue
-                    b_type = block.get("type")
-                    if b_type == "text":
-                        parts.append(ContentPartText(type="text", text=str(block.get("text", ""))))
-                    elif b_type == "image":
-                        source = block.get("source", {})
-                        if isinstance(source, dict) and source.get("type") == "base64":
-                            media_type = source.get("media_type", "image/png")
-                            data = source.get("data", "")
-                            parts.append(
-                                ContentPartImageUrl(
-                                    type="image_url",
-                                    image_url={"url": f"data:{media_type};base64,{data}"},
+                if role_raw == "assistant":
+                    tool_calls: list[AssistantToolCall] = []
+                    text_parts: list[str] = []
+                    for block in content:
+                        if not isinstance(block, dict):
+                            continue
+                        b_type = block.get("type")
+                        if b_type == "text":
+                            text_parts.append(str(block.get("text", "")))
+                        elif b_type == "tool_use":
+                            tool_id = str(block.get("id", f"call_{uuid4().hex[:16]}"))
+                            tool_name = str(block.get("name", ""))
+                            tool_input = block.get("input", {})
+                            tool_args = (
+                                json.dumps(tool_input, ensure_ascii=False, separators=(",", ":"))
+                                if isinstance(tool_input, dict)
+                                else str(tool_input)
+                            )
+                            tool_calls.append(
+                                AssistantToolCall(
+                                    id=tool_id,
+                                    type="function",
+                                    function=ToolCallFunction(name=tool_name, arguments=tool_args),
                                 )
                             )
-                chat_messages.append(ChatMessage(role=role, content=parts))
+                    text_content = "\n\n".join(text_parts) if text_parts else None
+                    chat_messages.append(
+                        ChatMessage(
+                            role="assistant",
+                            content=text_content,
+                            tool_calls=tool_calls or None,
+                        )
+                    )
+                else:
+                    parts: list[ContentPartText | ContentPartImageUrl] = []
+                    for block in content:
+                        if not isinstance(block, dict):
+                            continue
+                        b_type = block.get("type")
+                        if b_type == "tool_result":
+                            tool_use_id = str(block.get("tool_use_id", ""))
+                            res_content = block.get("content", "")
+                            if isinstance(res_content, list):
+                                res_text = "\n".join(
+                                    str(c.get("text", "")) for c in res_content if isinstance(c, dict)
+                                )
+                            elif isinstance(res_content, dict):
+                                res_text = json.dumps(res_content, ensure_ascii=False)
+                            else:
+                                res_text = str(res_content)
+                            chat_messages.append(
+                                ChatMessage(
+                                    role="tool",
+                                    tool_call_id=tool_use_id,
+                                    content=res_text,
+                                )
+                            )
+                        elif b_type == "text":
+                            parts.append(ContentPartText(type="text", text=str(block.get("text", ""))))
+                        elif b_type == "image":
+                            source = block.get("source", {})
+                            if isinstance(source, dict) and source.get("type") == "base64":
+                                media_type = source.get("media_type", "image/png")
+                                data = source.get("data", "")
+                                parts.append(
+                                    ContentPartImageUrl(
+                                        type="image_url",
+                                        image_url={"url": f"data:{media_type};base64,{data}"},
+                                    )
+                                )
+                    if parts:
+                        chat_messages.append(ChatMessage(role="user", content=parts))
 
         function_tools: list[FunctionTool] | None = None
         if self.tools:
@@ -128,6 +192,26 @@ class AnthropicMessageRequest(BaseModel):
                 for tool in self.tools
             ]
 
+        mapped_tool_choice: ToolChoice | None = None
+        if isinstance(self.tool_choice, dict):
+            tc_type = self.tool_choice.get("type")
+            if tc_type == "auto":
+                mapped_tool_choice = "auto"
+            elif tc_type == "any":
+                mapped_tool_choice = "required"
+            elif tc_type == "none":
+                mapped_tool_choice = "none"
+            elif tc_type == "tool" and self.tool_choice.get("name"):
+                mapped_tool_choice = ExplicitToolChoice(
+                    type="function",
+                    function=ToolChoiceFunction(name=str(self.tool_choice["name"])),
+                )
+        elif isinstance(self.tool_choice, str):
+            if self.tool_choice in {"auto", "required", "none"}:
+                mapped_tool_choice = self.tool_choice
+            elif self.tool_choice == "any":
+                mapped_tool_choice = "required"
+
         wants_thinking = bool(self.thinking and self.thinking.get("type") == "enabled")
 
         return ChatCompletionRequest(
@@ -136,6 +220,7 @@ class AnthropicMessageRequest(BaseModel):
             stream=self.stream,
             thinking=wants_thinking or None,
             tools=function_tools,
+            tool_choice=mapped_tool_choice,
             perplexity=self.perplexity,
         )
 
@@ -172,6 +257,7 @@ async def messages_endpoint(
             request.perplexity,
             reasoning_effort=request.reasoning_effort,
             thinking=request.thinking,
+            has_tools=bool(request.tools),
         )
         conversation = await to_thread.run_sync(client.create_conversation, config)
 
@@ -218,22 +304,33 @@ def _build_messages_payload(
     answer = conversation.answer or ""
     msg_id = f"msg_{uuid4().hex}"
 
-    emulated_tool_call = parse_emulated_tool_call(answer, request.tools, request.tool_choice)
-    if requires_tool_call(request.tools, request.tool_choice) and emulated_tool_call is None:
+    emulated_tool_calls = parse_emulated_tool_calls(answer, request.tools, request.tool_choice)
+    if requires_tool_call(request.tools, request.tool_choice) and not emulated_tool_calls:
         raise HTTPException(status_code=400, detail="Provider response did not contain a valid required tool call.")
 
     content: list[dict[str, Any]] = []
     stop_reason = "end_turn"
 
-    if emulated_tool_call is not None:
+    if emulated_tool_calls:
         stop_reason = "tool_use"
-        content.append(
+        first_sentinel_pos = answer.find(TOOL_CALL_SENTINEL_START)
+        if first_sentinel_pos > 0:
+            prefix_text = answer[:first_sentinel_pos].strip()
+            if prefix_text:
+                content.append(
+                    {
+                        "type": "text",
+                        "text": prefix_text,
+                    }
+                )
+        content.extend(
             {
                 "type": "tool_use",
-                "id": emulated_tool_call.call_id,
-                "name": emulated_tool_call.function_name,
-                "input": emulated_tool_call.arguments,
+                "id": call.call_id,
+                "name": call.function_name,
+                "input": call.arguments,
             }
+            for call in emulated_tool_calls
         )
     else:
         content.append(
@@ -245,10 +342,14 @@ def _build_messages_payload(
 
     conv_uuid = conversation.uuid
     if conv_uuid:
+        pending_metadata = None
+        if emulated_tool_calls:
+            pending_metadata = _pending_tool_calls_metadata(emulated_tool_calls)
         _conversation_cache.set(
             token,
             conv_uuid,
             conversation,
+            pending_tool_calls=pending_metadata,
             config_fingerprint=_config_fingerprint(request),
         )
 
@@ -288,6 +389,8 @@ async def _stream_messages_api(
     emitted_len = 0
     has_tools = bool(request.tools)
     model_id = request.model
+    text_block_opened = False
+    block_index = 0
 
     try:
         iterator = iter(conversation)
@@ -307,14 +410,6 @@ async def _stream_messages_api(
             },
         }
         yield f"event: message_start\ndata: {json.dumps(msg_start_event)}\n\n"
-
-        # 2. content_block_start event
-        block_start_event = {
-            "type": "content_block_start",
-            "index": 0,
-            "content_block": {"type": "text", "text": ""},
-        }
-        yield f"event: content_block_start\ndata: {json.dumps(block_start_event)}\n\n"
 
         while True:
             has_response, response = await to_thread.run_sync(_next_response, iterator)
@@ -336,9 +431,17 @@ async def _stream_messages_api(
                         delta = current[emitted_len:sentinel_pos]
                         emitted_len = sentinel_pos
                         if delta:
+                            if not text_block_opened:
+                                block_start = {
+                                    "type": "content_block_start",
+                                    "index": block_index,
+                                    "content_block": {"type": "text", "text": ""},
+                                }
+                                yield f"event: content_block_start\ndata: {json.dumps(block_start)}\n\n"
+                                text_block_opened = True
                             delta_event = {
                                 "type": "content_block_delta",
-                                "index": 0,
+                                "index": block_index,
                                 "delta": {"type": "text_delta", "text": delta},
                             }
                             yield f"event: content_block_delta\ndata: {json.dumps(delta_event)}\n\n"
@@ -354,9 +457,17 @@ async def _stream_messages_api(
                         delta = current[emitted_len:safe_len]
                         emitted_len = safe_len
                         if delta:
+                            if not text_block_opened:
+                                block_start = {
+                                    "type": "content_block_start",
+                                    "index": block_index,
+                                    "content_block": {"type": "text", "text": ""},
+                                }
+                                yield f"event: content_block_start\ndata: {json.dumps(block_start)}\n\n"
+                                text_block_opened = True
                             delta_event = {
                                 "type": "content_block_delta",
-                                "index": 0,
+                                "index": block_index,
                                 "delta": {"type": "text_delta", "text": delta},
                             }
                             yield f"event: content_block_delta\ndata: {json.dumps(delta_event)}\n\n"
@@ -364,39 +475,108 @@ async def _stream_messages_api(
                 delta = current[emitted_len:]
                 if delta:
                     emitted_len = len(current)
+                    if not text_block_opened:
+                        block_start = {
+                            "type": "content_block_start",
+                            "index": block_index,
+                            "content_block": {"type": "text", "text": ""},
+                        }
+                        yield f"event: content_block_start\ndata: {json.dumps(block_start)}\n\n"
+                        text_block_opened = True
                     delta_event = {
                         "type": "content_block_delta",
-                        "index": 0,
+                        "index": block_index,
                         "delta": {"type": "text_delta", "text": delta},
                     }
                     yield f"event: content_block_delta\ndata: {json.dumps(delta_event)}\n\n"
 
-        if has_tools and emitted_len < len(last_content):
+        if has_tools and not sentinel_started and emitted_len < len(last_content):
             remaining_delta = last_content[emitted_len:]
             if remaining_delta:
+                if not text_block_opened:
+                    block_start = {
+                        "type": "content_block_start",
+                        "index": block_index,
+                        "content_block": {"type": "text", "text": ""},
+                    }
+                    yield f"event: content_block_start\ndata: {json.dumps(block_start)}\n\n"
+                    text_block_opened = True
                 delta_event = {
                     "type": "content_block_delta",
-                    "index": 0,
+                    "index": block_index,
                     "delta": {"type": "text_delta", "text": remaining_delta},
                 }
                 yield f"event: content_block_delta\ndata: {json.dumps(delta_event)}\n\n"
 
+        # Close open text block if any
+        if text_block_opened:
+            stop_data = json.dumps({"type": "content_block_stop", "index": block_index})
+            yield f"event: content_block_stop\ndata: {stop_data}\n\n"
+            block_index += 1
+
+        # Check for emulated tool calls
+        emulated_calls = (
+            parse_emulated_tool_calls(last_content, request.tools, request.tool_choice)
+            if has_tools
+            else None
+        )
+
+        stop_reason = "end_turn"
+        if emulated_calls:
+            stop_reason = "tool_use"
+            for call in emulated_calls:
+                call_block_start = {
+                    "type": "content_block_start",
+                    "index": block_index,
+                    "content_block": {
+                        "type": "tool_use",
+                        "id": call.call_id,
+                        "name": call.function_name,
+                        "input": {},
+                    },
+                }
+                yield f"event: content_block_start\ndata: {json.dumps(call_block_start)}\n\n"
+
+                call_block_delta = {
+                    "type": "content_block_delta",
+                    "index": block_index,
+                    "delta": {
+                        "type": "input_json_delta",
+                        "partial_json": serialize_tool_arguments(call.arguments),
+                    },
+                }
+                yield f"event: content_block_delta\ndata: {json.dumps(call_block_delta)}\n\n"
+
+                stop_call = json.dumps({"type": "content_block_stop", "index": block_index})
+                yield f"event: content_block_stop\ndata: {stop_call}\n\n"
+                block_index += 1
+        elif not text_block_opened:
+            # Emit empty text block if nothing else was emitted
+            block_start = {
+                "type": "content_block_start",
+                "index": 0,
+                "content_block": {"type": "text", "text": ""},
+            }
+            yield f"event: content_block_start\ndata: {json.dumps(block_start)}\n\n"
+            yield f"event: content_block_stop\ndata: {json.dumps({'type': 'content_block_stop', 'index': 0})}\n\n"
+
         conv_uuid = conversation.uuid
         if conv_uuid:
+            pending_metadata = None
+            if emulated_calls:
+                pending_metadata = _pending_tool_calls_metadata(emulated_calls)
             _conversation_cache.set(
                 token,
                 conv_uuid,
                 conversation,
+                pending_tool_calls=pending_metadata,
                 config_fingerprint=config_fingerprint,
             )
-
-        # 3. content_block_stop event
-        yield f"event: content_block_stop\ndata: {json.dumps({'type': 'content_block_stop', 'index': 0})}\n\n"
 
         # 4. message_delta event
         msg_delta: dict[str, Any] = {
             "type": "message_delta",
-            "delta": {"stop_reason": "end_turn", "stop_sequence": None},
+            "delta": {"stop_reason": stop_reason, "stop_sequence": None},
             "usage": {"output_tokens": 0},
         }
         yield f"event: message_delta\ndata: {json.dumps(msg_delta)}\n\n"
