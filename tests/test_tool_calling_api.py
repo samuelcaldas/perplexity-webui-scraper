@@ -877,4 +877,3 @@ def test_build_conversation_config_search_focus_with_and_without_tools() -> None
     ext_override = PerplexityExtensions(search_focus="web")
     config_override = build_conversation_config(MODEL_ID, ext=ext_override, has_tools=True)
     assert config_override.search_focus == "web"
-

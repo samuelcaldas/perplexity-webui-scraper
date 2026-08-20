@@ -167,6 +167,11 @@ line-ending = "lf"
 docstring-code-format = true
 skip-magic-trailing-comma = false
 
+[tool.pytest.ini_options]
+markers = [
+    "model_e2e: End-to-end test against real model sessions",
+]
+
 [tool.ruff.lint.isort]
 lines-after-imports = 2
 force-sort-within-sections = true

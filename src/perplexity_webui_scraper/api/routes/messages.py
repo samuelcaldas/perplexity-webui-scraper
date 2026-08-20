@@ -148,9 +148,7 @@ class AnthropicMessageRequest(BaseModel):
                             tool_use_id = str(block.get("tool_use_id", ""))
                             res_content = block.get("content", "")
                             if isinstance(res_content, list):
-                                res_text = "\n".join(
-                                    str(c.get("text", "")) for c in res_content if isinstance(c, dict)
-                                )
+                                res_text = "\n".join(str(c.get("text", "")) for c in res_content if isinstance(c, dict))
                             elif isinstance(res_content, dict):
                                 res_text = json.dumps(res_content, ensure_ascii=False)
                             else:
@@ -516,9 +514,7 @@ async def _stream_messages_api(
 
         # Check for emulated tool calls
         emulated_calls = (
-            parse_emulated_tool_calls(last_content, request.tools, request.tool_choice)
-            if has_tools
-            else None
+            parse_emulated_tool_calls(last_content, request.tools, request.tool_choice) if has_tools else None
         )
 
         stop_reason = "end_turn"

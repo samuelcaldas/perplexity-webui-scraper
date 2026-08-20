@@ -529,4 +529,3 @@ def test_claude_cli_prompt_contains_all_anti_refusal_and_tail_reminders(openai_c
     assert query.endswith("</harness_reminder>")
     assert "[User]: Read server.py and fix the port" in query
     assert query.index("[User]: Read server.py") < query.index("<harness_reminder>")
-

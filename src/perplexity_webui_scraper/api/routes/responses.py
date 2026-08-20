@@ -34,6 +34,7 @@ from perplexity_webui_scraper.api.schemas.request import (
     ContentPartImageUrl,
     ContentPartText,
     ExplicitToolChoice,
+    FunctionDefinition,
     FunctionTool,
     PerplexityExtensions,
     ToolCallFunction,
@@ -71,7 +72,7 @@ class ResponseApiRequest(BaseModel):
     stream: bool = False
     reasoning_effort: Literal["low", "medium", "high", "none"] | None = None
     thinking: bool | None = None
-    tools: list[FunctionTool] | None = None
+    tools: list[Any] | None = None
     tool_choice: Any = None
     perplexity: PerplexityExtensions | None = None
 
@@ -95,9 +96,7 @@ class ResponseApiRequest(BaseModel):
                         name = str(item.get("name", ""))
                         raw_args = item.get("arguments", "{}")
                         args_str = (
-                            json.dumps(raw_args, ensure_ascii=False)
-                            if isinstance(raw_args, dict)
-                            else str(raw_args)
+                            json.dumps(raw_args, ensure_ascii=False) if isinstance(raw_args, dict) else str(raw_args)
                         )
                         messages.append(
                             ChatMessage(
@@ -154,6 +153,26 @@ class ResponseApiRequest(BaseModel):
         if not messages:
             messages.append(ChatMessage(role="user", content=""))
 
+        normalized_tools: list[FunctionTool] | None = None
+        if self.tools:
+            normalized_tools = []
+            for tool in self.tools:
+                if isinstance(tool, FunctionTool):
+                    normalized_tools.append(tool)
+                elif isinstance(tool, dict):
+                    if "function" in tool and isinstance(tool["function"], dict):
+                        normalized_tools.append(FunctionTool.model_validate(tool))
+                    elif tool.get("type") == "function" and "name" in tool:
+                        fn_def = FunctionDefinition(
+                            name=str(tool["name"]),
+                            description=tool.get("description"),
+                            parameters=tool.get("parameters") or {},
+                            strict=tool.get("strict"),
+                        )
+                        normalized_tools.append(FunctionTool(type="function", function=fn_def))
+                    else:
+                        normalized_tools.append(FunctionTool.model_validate(tool))
+
         mapped_tool_choice: ToolChoice | None = None
         if isinstance(self.tool_choice, dict):
             tc_type = self.tool_choice.get("type")
@@ -163,11 +182,17 @@ class ResponseApiRequest(BaseModel):
                 mapped_tool_choice = "required"
             elif tc_type == "none":
                 mapped_tool_choice = "none"
-            elif tc_type == "function" and self.tool_choice.get("function", {}).get("name"):
-                mapped_tool_choice = ExplicitToolChoice(
-                    type="function",
-                    function=ToolChoiceFunction(name=str(self.tool_choice["function"]["name"])),
-                )
+            elif tc_type == "function":
+                fn_name: str | None = None
+                if "name" in self.tool_choice:
+                    fn_name = str(self.tool_choice["name"])
+                elif "function" in self.tool_choice and isinstance(self.tool_choice["function"], dict):
+                    fn_name = str(self.tool_choice["function"].get("name", ""))
+                if fn_name:
+                    mapped_tool_choice = ExplicitToolChoice(
+                        type="function",
+                        function=ToolChoiceFunction(name=fn_name),
+                    )
         elif isinstance(self.tool_choice, str):
             if self.tool_choice in {"auto", "required", "none"}:
                 mapped_tool_choice = self.tool_choice
@@ -180,7 +205,7 @@ class ResponseApiRequest(BaseModel):
             stream=self.stream,
             reasoning_effort=self.reasoning_effort,
             thinking=self.thinking,
-            tools=self.tools,
+            tools=normalized_tools,
             tool_choice=mapped_tool_choice,
             perplexity=self.perplexity,
         )
@@ -431,9 +456,7 @@ async def _stream_responses_api(
                 yield f"event: response.text.delta\ndata: {json.dumps(delta_event)}\n\n"
 
         emulated_calls = (
-            parse_emulated_tool_calls(last_content, request.tools, request.tool_choice)
-            if has_tools
-            else None
+            parse_emulated_tool_calls(last_content, request.tools, request.tool_choice) if has_tools else None
         )
 
         output_items: list[dict[str, Any]] = []

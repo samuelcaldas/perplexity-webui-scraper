@@ -1,103 +1,150 @@
-# Implementation Plan: Hardened Tool Calling In-Context Few-Shots, Tail Reminders & Strict Prompt Verification Test Suite
+# Implementation Plan: Injected Custom Tool Multi-Turn Execution, Monitoring, and Synthesis Test Suite
 
-## 1. Context & Problem Statement
+## 1. Context & Objective
 
-### 1.1 The Live LLM Failure Modes
+The user requested an end-to-end multi-turn test featuring a custom tool injected exclusively for the test. The test must:
 
-When proxying reasoning and agentic LLMs (Claude Sonnet 3.7/5, GPT-5, Kimi-k3, GLM, Grok, Qwen 2.5) through the Perplexity WebUI scraper, models exhibited three recurring failure patterns:
-
-1. **Multilingual Refusal / Capability Disclaimers**: Upstream Perplexity RLHF and persona injection caused models to reply: _"não tenho acesso direto aos recursos de ferramentas nessa sessão"_ or _"I do not have access to external tools"_.
-2. **Hallucinated / Faked Prose Executions**: Models simulated actions in text instead of invoking tools: _"Gerei uma imagem: paisagem aleatória..."_ or _"Created file /tmp/foo"_.
-3. **Turn Deferrals & Prompt Suggestions**: Models made turn-based excuses: _"Não posso acionar a ferramenta neste turno, mas posso sugerir um prompt para você usar..."_.
-
-### 1.2 Why Automated Tests Passed While Live LLMs Failed
-
-Prior test suites only verified:
-
-- Downstream parser functions against synthetic mocked strings like `<|OPENAI_TOOL_CALL|>{...}<|END_OPENAI_TOOL_CALL|>`.
-- Streaming SSE chunk splitting and JSON argument delta serialization.
-
-They did **NOT** test:
-
-- What actual prompt (`query_str`) is compiled and dispatched to Perplexity.
-- Whether in-context few-shot demonstrations exist to ground the LLM.
-- Whether recency-biased tail reminders (`<harness_reminder>`) counteract system-prompt attention decay.
-- Whether anti-refusal, anti-simulation, and multilingual directives are strictly enforced at the prompt compiler layer.
-
-As requested by the user: **The test suite must assert the structural integrity of the compiled query string (`query_str`), failing until all few-shots, anti-refusal rules, anti-simulation directives, and tail reminders are properly compiled.**
+1. Inject a dedicated custom tool schema (`run_cluster_diagnostic`) along with a control tool (`lookup_test_runbook`).
+2. Guide the model via structured prompts to respond in the required test format.
+3. Verify capability inquiries: ensure the model lists available tools including the test-injected tool without disclaimer.
+4. Verify tool invocation: ensure the model calls the tool with exact expected parameters (`cluster_id`, `checks`, `include_raw`).
+5. Monitor and record all calls made to the custom tool via a dedicated `ToolCallMonitor` test harness.
+6. Feed back the tool execution results into the conversation.
+7. Verify final synthesis: ensure the model's final response lists and synthesizes the tool outputs accurately.
 
 ---
 
-## 2. Proposed Architecture & Solution
+## 2. Injected Custom Tool & Control Tool Design
 
-### 2.1 In-Context Few-Shot Demonstrations (`build_tool_instruction`)
+### 2.1 Injected Tool Specification
 
-Location: `src/perplexity_webui_scraper/api/tool_calling.py`
-Add explicit `<few_shot_examples>` showing:
-
-- Example 1: User asks to perform an action (e.g. read a file / generate an image / run a command) -> Assistant immediately outputs ONLY the sentinel `<|OPENAI_TOOL_CALL|>{"name":"...","arguments":{...}}<|END_OPENAI_TOOL_CALL|>` with zero prose.
-- Example 2: User asks what tools/capabilities are available -> Assistant lists and explains the tools declared in `<declared_tools>` without disclaiming access.
-- Example 3: Multi-turn tool execution where user provides `[Tool Result: ...]` -> Assistant answers based on the returned tool output.
-
-### 2.2 Recency-Biased Tail Reminder (`<harness_reminder>`)
-
-Location: `src/perplexity_webui_scraper/api/helpers.py` in `build_query_and_files()`
-When `request.tools` is present:
-
-- Append an imperative tail reminder immediately after the last turn in `query_str`:
-  ```markdown
-  <harness_reminder>
-  REMINDER: You have active tools declared above. If the user's request requires executing an action or calling a tool, you MUST emit ONLY the tool sentinel <|OPENAI_TOOL_CALL|>...<|END_OPENAI_TOOL_CALL|>. Do NOT simulate execution in text, do NOT disclaim capabilities, and do NOT defer to another turn.
-  </harness_reminder>
+- **Function Name**: `run_cluster_diagnostic`
+- **Description**: "Run deterministic diagnostics against the isolated test cluster."
+- **Parameters Schema**:
+  ```json
+  {
+    "type": "object",
+    "properties": {
+      "cluster_id": { "type": "string", "enum": ["cluster-test-17"] },
+      "checks": {
+        "type": "array",
+        "items": { "type": "string", "enum": ["dns", "storage"] },
+        "minItems": 2,
+        "maxItems": 2,
+        "uniqueItems": true
+      },
+      "include_raw": { "type": "boolean", "enum": [false] }
+    },
+    "required": ["cluster_id", "checks", "include_raw"],
+    "additionalProperties": false
+  }
   ```
-- This ensures LLMs with long context windows or RLHF bias pay immediate attention to tool execution right before generating their completion.
+- **Expected Arguments**:
+  ```python
+  EXPECTED_DIAGNOSTIC_ARGS = {
+      "cluster_id": "cluster-test-17",
+      "checks": ["dns", "storage"],
+      "include_raw": False,
+  }
+  ```
 
-### 2.3 Search Focus & Upstream Persona Suppression
+### 2.2 Control Tool Specification (to verify precision and non-execution)
 
-Location: `src/perplexity_webui_scraper/api/helpers.py` in `build_conversation_config()`
+- **Function Name**: `lookup_test_runbook`
+- **Description**: "Look up troubleshooting runbooks for cluster alerts."
+- Declared alongside `run_cluster_diagnostic` to verify:
+  - Both tools appear in capability listings.
+  - The model does not execute undeclared or unintended tools.
 
-- When tools are declared (`has_tools=True`), default `search_focus="writing"` (unless explicitly overridden by user).
-- This suppresses Perplexity's web search pre-pass and disables search-agent persona injection.
+### 2.3 Deterministic Tool Output & Final Synthesized Shape
 
-### 2.4 Strict Prompt Assertion Test Suite
-
-Location: `tests/test_tool_calling_api.py` and `tests/test_claude_cli_integration.py`
-Create tests that intercept `mock_conv.ask(query_str)` and rigorously assert:
-
-1. `test_query_str_contains_system_environment_and_operating_rules`: Verifies `<system_environment>` with rules 1-7 (Active Capabilities, No Fake Execution, No Turn Excuses, No Prompt Suggestions, Multilingual Refusal Prohibition, Immediate Tool Invocation, Output Format).
-2. `test_query_str_contains_few_shot_demonstrations`: Verifies `<few_shot_examples>` is present and contains valid sentinel syntax examples.
-3. `test_query_str_contains_declared_tools_and_selection_rules`: Verifies schema serialization in `<declared_tools>` and `<selection_rule>`.
-4. `test_query_str_contains_recency_tail_reminder`: Verifies `<harness_reminder>` is placed at the very end of `query_str`.
-5. `test_has_tools_forces_writing_search_focus`: Verifies `search_focus="writing"` when tools are provided.
-6. `test_anthropic_and_responses_endpoints_compile_same_robust_prompt`: Verifies `/v1/messages` and `/v1/responses` endpoints produce identical hardened prompt structure.
+- **Tool Output** (returned by test harness executor):
+  ```json
+  {
+    "cluster": "cluster-test-17",
+    "overall": "DEGRADED",
+    "checks": [
+      { "name": "dns", "ok": true, "message": "resolver latency 12ms" },
+      { "name": "storage", "ok": false, "message": "node-7 volume is 91% full" }
+    ],
+    "next_action": "drain node-7"
+  }
+  ```
+- **Expected Synthesized Final Output**:
+  ```json
+  {
+    "cluster_id": "cluster-test-17",
+    "overall_status": "degraded",
+    "findings": [
+      { "check": "dns", "status": "pass", "detail": "resolver latency 12ms" },
+      {
+        "check": "storage",
+        "status": "fail",
+        "detail": "node-7 volume is 91% full"
+      }
+    ],
+    "recommendation": "drain node-7"
+  }
+  ```
 
 ---
 
-## 3. File Modification Map
+## 3. Test Harness Architecture: `ToolCallMonitor` & Endpoint Adapters
 
-| Component / File                                   | Purpose of Change                                                                                                                                                                                       |
-| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/perplexity_webui_scraper/api/tool_calling.py` | Add `<few_shot_examples>` and expand operating rules in `build_tool_instruction()`.                                                                                                                     |
-| `src/perplexity_webui_scraper/api/helpers.py`      | Inject `<harness_reminder>` at the tail of `query_str` in `build_query_and_files()` when tools are present. Ensure `build_conversation_config` defaults `search_focus="writing"` when `has_tools=True`. |
-| `tests/test_tool_calling_api.py`                   | Add unit tests asserting exact presence of `<few_shot_examples>`, `<harness_reminder>`, operating rules, and anti-refusal directives in `build_tool_instruction()` and `build_query_and_files()`.       |
-| `tests/test_claude_cli_integration.py`             | Add end-to-end multi-turn integration tests asserting prompt compilation across OpenAI `/v1/chat/completions`, Anthropic `/v1/messages`, and OpenAI `/v1/responses`.                                    |
+### 3.1 `ToolCallMonitor`
+
+- Records every emitted tool call (`endpoint`, `stage`, `call_id`, `name`, `arguments`) before assertion checks.
+- Intercepts and executes only the expected `run_cluster_diagnostic` tool call.
+- Raises if unknown or control tools (`lookup_test_runbook`) are attempted to be executed.
+- Provides inspection assertions on total calls recorded across turns.
+
+### 3.2 3-Turn Multi-Turn Flow
+
+1. **Turn 1 (Capability Inquiry)**:
+   - Request: "Which tools are available in this session? Return exact JSON: `{"available_tools": [...]}`. Do not call any tool."
+   - Assert: HTTP 200, `finish_reason == "stop"` / `stop_reason == "end_turn"`, exact JSON `{"available_tools": ["lookup_test_runbook", "run_cluster_diagnostic"]}`, 0 calls in monitor.
+2. **Turn 2 (Tool Invocation)**:
+   - Request: "Call run_cluster_diagnostic with cluster_id 'cluster-test-17', checks ['dns', 'storage'], include_raw false. Emit only the tool invocation."
+   - Assert: HTTP 200, `finish_reason == "tool_calls"` / `stop_reason == "tool_use"`, tool call recorded in monitor with exact arguments.
+3. **Turn 3 (Result Feedback & Synthesis)**:
+   - Request: Feeds `[Tool Result: ...]` using emitted `call_id` and asks model to synthesize findings into structured format.
+   - Assert: HTTP 200, assistant text response parses as exact expected synthesis JSON, monitor call count unchanged.
+
+### 3.3 Endpoint Coverage
+
+The test scenario driver runs across all 3 supported APIs:
+
+- OpenAI `/v1/chat/completions`
+- Anthropic `/v1/messages`
+- OpenAI `/v1/responses`
 
 ---
 
-## 4. Verification & Quality Gates
+## 4. File Modification & Creation Map
 
-1. **Test Suite Execution**:
-   - `uv run --all-extras pytest tests/test_tool_calling_api.py`
-   - `uv run --all-extras pytest tests/test_claude_cli_integration.py`
-   - `uv run --all-extras pytest tests/test_anthropic_api.py`
-   - `uv run --all-extras pytest tests/test_responses_api.py`
-   - `uv run --all-extras pytest` (Full suite must pass 100%)
+| File Path                                              | Description                                                                                      |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
+| `tests/_injected_tool_e2e_harness.py`                  | Shared harness containing tool schemas, `ToolCallMonitor`, and endpoint adapters.                |
+| `tests/test_injected_tool_model_e2e.py`                | Complete multi-turn integration test suite covering contract assertions across all 3 endpoints.  |
+| `src/perplexity_webui_scraper/api/routes/responses.py` | Ensure Responses API endpoint supports flat function tool schema normalization.                  |
+| `src/perplexity_webui_scraper/api/tool_calling.py`     | Ensure prompt instructions support exact listing in few-shot capability demonstration if needed. |
 
-2. **Linting & Formatting**:
-   - `uv run ruff check`
-   - `uv run ruff format --check`
-   - `uv run ty check`
+---
 
-3. **Deploy & Live Verification**:
-   - Commit changes cleanly via `/caveman-commit`.
-   - Redeploy stack to VPS (`deploy/vps/perplexity-sidecar-chat/update.sh`).
+## 5. Verification Steps
+
+1. Run unit and contract test suites:
+   ```bash
+   uv run --all-extras pytest tests/test_injected_tool_model_e2e.py
+   uv run --all-extras pytest tests/test_tool_calling_api.py
+   uv run --all-extras pytest tests/test_claude_cli_integration.py
+   uv run --all-extras pytest tests/test_anthropic_api.py
+   uv run --all-extras pytest tests/test_responses_api.py
+   uv run --all-extras pytest
+   ```
+2. Lint and type-check:
+   ```bash
+   uv run ruff check
+   uv run ruff format --check
+   uv run ty check
+   ```
